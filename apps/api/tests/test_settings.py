@@ -111,8 +111,17 @@ def test_r2_optional_fields_accept_values() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_missing_required_raises() -> None:
-    """Missing required fields raise ValidationError at instantiation."""
+def test_missing_required_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing required fields raise ValidationError at instantiation.
+
+    The conftest seeds default env vars to keep app imports happy during
+    collection; this test must explicitly remove the required ones to
+    re-create the "no env at all" condition.
+    """
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("TICK_SECRET", raising=False)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+
     with pytest.raises(ValidationError) as exc_info:
         Settings(_env_file=None)  # type: ignore[call-arg]
 

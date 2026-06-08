@@ -21,12 +21,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 async def test_select_one() -> None:
     """Open a connection and execute SELECT 1; assert the result is 1."""
+    from tests.conftest import _is_placeholder_database_url
+
     database_url = os.environ.get("DATABASE_URL", "")
-    if not database_url:
+    if not database_url or _is_placeholder_database_url(database_url):
         pytest.skip(
-            "DATABASE_URL no está configurado. "
-            "Iniciá la base de datos con `pnpm db:up` y "
-            "configurá DATABASE_URL en .env.local."
+            "DATABASE_URL no apunta a una base real. "
+            "Levantá Postgres con `pnpm db:up` y exportá DATABASE_URL."
         )
 
     # Create a fresh engine directly — does not touch the app singleton so
@@ -47,9 +48,11 @@ async def test_get_session_yields_async_session() -> None:
     This test only validates the shape of the dependency, not the DB connection.
     It also skips if no DATABASE_URL is available.
     """
+    from tests.conftest import _is_placeholder_database_url
+
     database_url = os.environ.get("DATABASE_URL", "")
-    if not database_url:
-        pytest.skip("DATABASE_URL no está configurado.")
+    if not database_url or _is_placeholder_database_url(database_url):
+        pytest.skip("DATABASE_URL no apunta a una base real.")
 
     # Import here so the env-var check above can skip before any engine is created.
     from sqlalchemy.ext.asyncio import AsyncSession
