@@ -1,0 +1,54 @@
+# fly.toml — AI Plot Twist API deployment configuration
+#
+# Deploy from the repo root:
+#   fly deploy --config infra/fly.toml
+#
+# Fly.io uses the current working directory as the Docker build context,
+# so run the command from the repo root (not from infra/).
+# The `dockerfile` path below is relative to THIS file (infra/), which
+# resolves to apps/api/Dockerfile.
+#
+# First-time setup:
+#   fly auth login
+#   fly apps create ai-plot-twist          # adjust app name if taken
+#   fly secrets set \
+#     DATABASE_URL="<neon-connection-string>" \
+#     TICK_SECRET="$(openssl rand -base64 32)" \
+#     JWT_SECRET="$(openssl rand -base64 32)"
+#   fly deploy --config infra/fly.toml
+
+app            = "ai-plot-twist"
+primary_region = "gru"    # São Paulo — closest Fly.io free-tier region to Argentina
+
+[build]
+  # Path relative to infra/ → resolves to apps/api/Dockerfile.
+  # Build context is the repo root (cwd at deploy time).
+  dockerfile = "../apps/api/Dockerfile"
+
+[env]
+  # Non-secret runtime config. Secrets (DATABASE_URL, JWT_SECRET, TICK_SECRET)
+  # are set via `fly secrets set` and never committed.
+  ENV  = "prod"
+  PORT = "8000"
+
+[http_service]
+  internal_port      = 8000
+  force_https        = true
+
+  # Keep the machine alive between cron ticks.
+  # The generation pipeline (module 008) can run for up to 55 min; auto-stop
+  # would kill it mid-flight.
+  auto_stop_machines  = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "30s"   # Allow time for DB connection pool warmup
+    interval     = "15s"
+    method       = "GET"
+    path         = "/healthz"
+    protocol     = "http"
+    timeout      = "5s"
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "256mb"
