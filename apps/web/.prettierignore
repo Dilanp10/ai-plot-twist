@@ -1,0 +1,6 @@
+dist/
+node_modules/
+coverage/
+.svelte-kit/
+pnpm-lock.yaml
+package.json
