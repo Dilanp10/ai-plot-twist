@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aiplottwist_postgres_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: aiplottwist
+    ports:
+      # Map to 5433 (not 5432) so running a local Postgres on the default
+      # port does not conflict with the dev container.
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready exits 0 when the server is ready to accept connections.
+      test: ["CMD-SHELL", "pg_isready -U app -d aiplottwist"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  pgdata:
+    name: aiplottwist_pgdata
