@@ -12,7 +12,7 @@
     "install": "echo 'Use \"pnpm install\" (the built-in). This entry exists so the command is discoverable via \"pnpm run\". Python deps install via the postinstall hook.'",
     "install:api": "cd apps/api && uv sync --frozen",
     "postinstall": "cd apps/api && uv sync --frozen",
-    "dev": "echo 'Run after T-018: pnpm db:up && pnpm migrate && concurrently ...'",
+    "dev": "pnpm db:up && pnpm migrate && concurrently --kill-others-on-fail --names api,web --prefix-colors cyan,magenta \"pnpm --filter ./apps/api dev\" \"pnpm --filter ./apps/web dev\"",
     "test": "pnpm test:api && pnpm test:web",
     "test:api": "pnpm --filter ./apps/api test",
     "test:web": "pnpm --filter ./apps/web test",
@@ -22,7 +22,7 @@
     "format": "pnpm format:api && pnpm format:web",
     "format:api": "pnpm --filter ./apps/api format",
     "format:web": "pnpm --filter ./apps/web format",
-    "db:up": "docker compose -f infra/docker-compose.dev.yml up -d postgres",
+    "db:up": "node scripts/check-docker.mjs && docker compose -f infra/docker-compose.dev.yml up -d postgres",
     "db:down": "docker compose -f infra/docker-compose.dev.yml down",
     "db:reset": "pnpm db:down && (docker volume rm aiplottwist_pgdata || true) && pnpm db:up && pnpm migrate",
     "migrate": "pnpm --filter ./apps/api migrate"
