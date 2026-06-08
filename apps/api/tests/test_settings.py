@@ -114,9 +114,9 @@ def test_r2_optional_fields_accept_values() -> None:
 def test_missing_required_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """Missing required fields raise ValidationError at instantiation.
 
-    The conftest seeds default env vars to keep app imports happy during
-    collection; this test must explicitly remove the required ones to
-    re-create the "no env at all" condition.
+    Required = ``database_url`` and ``jwt_secret``. ``tick_secret`` is optional
+    on purpose (spec edge case: app boots without it, ``/internal/*`` returns
+    503 lazily).
     """
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("TICK_SECRET", raising=False)
@@ -128,8 +128,20 @@ def test_missing_required_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     errors = exc_info.value.errors()
     missing_fields = {e["loc"][0] for e in errors if e["type"] == "missing"}
     assert "database_url" in missing_fields
-    assert "tick_secret" in missing_fields
     assert "jwt_secret" in missing_fields
+    # tick_secret is optional — must NOT be in the missing-fields set.
+    assert "tick_secret" not in missing_fields
+
+
+def test_tick_secret_defaults_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """tick_secret is None when the env var is not set."""
+    monkeypatch.delenv("TICK_SECRET", raising=False)
+    s = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        database_url="postgresql+asyncpg://app:app@localhost:5433/test",
+        jwt_secret="test-jwt-secret",
+    )
+    assert s.tick_secret is None
 
 
 # ---------------------------------------------------------------------------

@@ -68,8 +68,14 @@ class Settings(BaseSettings):
 
     # ── Required (no default) ────────────────────────────────────────────────
     database_url: str
-    tick_secret: str
     jwt_secret: str
+
+    # ── Optional ─────────────────────────────────────────────────────────────
+    # TICK_SECRET is intentionally optional, per the spec edge case:
+    # "if the env var is missing, every request to POST /internal/* MUST return
+    # 503 and the boot log MUST emit a single warning". The HMAC dependency
+    # enforces the 503 at request time (app/middleware/hmac_tick.py).
+    tick_secret: str | None = None
 
     # ── Cloudflare R2 (optional — safe to leave empty in dev) ───────────────
     r2_account_id: str | None = None

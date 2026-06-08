@@ -28,7 +28,6 @@ import logging
 import sys
 
 import structlog
-import structlog.stdlib
 from structlog.types import FilteringBoundLogger
 
 
@@ -59,8 +58,11 @@ def configure_logging(log_level: str = "INFO") -> None:
             structlog.contextvars.merge_contextvars,
             # Standard metadata processors.
             structlog.processors.add_log_level,
-            # add_logger_name lives in structlog.stdlib even for non-stdlib pipelines.
-            structlog.stdlib.add_logger_name,
+            # Note: ``structlog.stdlib.add_logger_name`` is intentionally omitted.
+            # It expects the underlying factory to yield a stdlib ``logging.Logger``
+            # (which exposes ``.name``), but we use ``PrintLoggerFactory`` for direct
+            # stdout writes. If we need the logger name in the JSON, add a custom
+            # processor that reads it from the bound logger's ``_context``.
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             # Exception handling: render tracebacks into the JSON ``exception`` key.
             structlog.processors.StackInfoRenderer(),

@@ -23,7 +23,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.health import router as health_router
 from app.db import dispose_engine
+from app.errors import ProblemDetail, problem_handler
 from app.logging import configure_logging, get_logger
 from app.middleware.request_id import RequestIdMiddleware
 from app.settings import Settings, get_settings
@@ -46,6 +48,17 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         env=settings.env,
         log_level=settings.log_level,
     )
+
+    # Spec edge case: the app must boot even when TICK_SECRET is missing.
+    # The HMAC dependency returns 503 at request time, but we log a single
+    # warning at boot so the operator can fix the deployment without
+    # waiting for a cron tick.
+    if not settings.tick_secret:
+        _log.warning(
+            "tick_secret_missing_at_boot",
+            detail="TICK_SECRET is not set; /internal/* will return 503.",
+        )
+
     try:
         yield
     finally:
@@ -80,6 +93,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Inject a uuid4 request_id per request, exposed as X-Request-Id and bound
     # to structlog's contextvars for every log entry within the request scope.
     app.add_middleware(RequestIdMiddleware)
+
+    # Convert ProblemDetail exceptions into RFC 7807 application/problem+json
+    # responses (see app/errors.py).
+    app.add_exception_handler(ProblemDetail, problem_handler)
+
+    # Mount routers
+    app.include_router(health_router)
 
     return app
 
