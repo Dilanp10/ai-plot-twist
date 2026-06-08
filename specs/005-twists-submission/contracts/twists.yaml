@@ -1,0 +1,197 @@
+openapi: 3.1.0
+info:
+  title: AI Plot Twist — Twists (module 005)
+  version: 0.5.0
+  description: |
+    Authenticated submission, soft-deletion, and self-listing of twists.
+
+servers:
+  - url: http://localhost:8000
+  - url: https://api.aiplottwist.example
+
+paths:
+  /api/v1/twists/submit:
+    post:
+      operationId: postTwistsSubmit
+      summary: Submit a continuation proposal for the current live chapter
+      security:
+        - BearerJwt: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubmitRequest" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubmitResponse" }
+        "200":
+          description: Idempotent replay; original response replayed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubmitResponse" }
+        "401":
+          description: Missing / invalid JWT.
+        "403":
+          description: Banned user.
+        "409":
+          description: |
+            Reasons (see `code`):
+            - `window_closed` — not in RECEPCION_IDEAS or past submit_until.
+            - `over_quota` — user has reached MAX_TWISTS_PER_USER_PER_CHAPTER.
+            - `chapter_mismatch` — chapter_id is not the current live chapter.
+            - `idempotency_conflict` — same Idempotency-Key, different body.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: Bad body (content too short/long, missing fields, malformed key).
+        "503":
+          description: under_maintenance or lock_busy.
+      tags: [twists]
+
+  /api/v1/twists/{public_id}:
+    delete:
+      operationId: deleteTwistById
+      summary: Soft-delete a pending twist (only during RECEPCION_IDEAS)
+      security:
+        - BearerJwt: []
+      parameters:
+        - in: path
+          name: public_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Deleted (or already deleted; idempotent).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeleteResponse" }
+        "401":
+          description: Missing / invalid JWT.
+        "403":
+          description: |
+            Reasons (see `code`):
+            - `forbidden_not_owner` — twist is not the caller's.
+            - `banned` — user is banned.
+        "404":
+          description: twist_not_found.
+        "409":
+          description: |
+            Reasons:
+            - `window_closed` — not in RECEPCION_IDEAS or past submit_until.
+            - `already_filtered` — twist is no longer in `pending_review`.
+        "503":
+          description: under_maintenance.
+      tags: [twists]
+
+  /api/v1/me/twists:
+    get:
+      operationId: getMeTwists
+      summary: List the caller's twists for the current live chapter
+      security:
+        - BearerJwt: []
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeTwistsResponse" }
+        "401":
+          description: Missing / invalid JWT.
+        "403":
+          description: banned.
+        "503":
+          description: under_maintenance.
+      tags: [twists]
+
+components:
+  schemas:
+    SubmitRequest:
+      type: object
+      required: [chapter_id, content]
+      properties:
+        chapter_id:
+          type: string
+          format: uuid
+          description: Must equal the currently live chapter's public_id.
+        content:
+          type: string
+          minLength: 5
+          maxLength: 280
+          description: NFKC-normalized server-side; control chars stripped.
+
+    SubmitResponse:
+      type: object
+      required: [twist, remaining_submissions]
+      properties:
+        twist: { $ref: "#/components/schemas/TwistMine" }
+        remaining_submissions:
+          type: integer
+          minimum: 0
+          description: Quota remaining AFTER this submission.
+
+    DeleteResponse:
+      type: object
+      required: [twist_id, deleted_at, remaining_submissions]
+      properties:
+        twist_id: { type: string, format: uuid }
+        deleted_at: { type: string, format: date-time }
+        remaining_submissions:
+          type: integer
+          minimum: 0
+          description: Unchanged from before delete (FR-004 anti-spam-then-delete).
+
+    MeTwistsResponse:
+      type: object
+      required: [items, quota]
+      properties:
+        items:
+          type: array
+          maxItems: 8
+          items: { $ref: "#/components/schemas/TwistMine" }
+        quota: { $ref: "#/components/schemas/Quota" }
+
+    TwistMine:
+      type: object
+      required: [public_id, content, status, submitted_at]
+      properties:
+        public_id: { type: string, format: uuid }
+        content: { type: string }
+        status:
+          type: string
+          enum: [pending_review, approved, rejected_offensive, rejected_incoherent,
+                 rejected_spam, deleted_by_user]
+        director_reason:
+          type: string
+          nullable: true
+          description: Set by module 006 when filter classifies as rejected_*.
+        submitted_at: { type: string, format: date-time }
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Quota:
+      type: object
+      required: [used, max, remaining]
+      properties:
+        used: { type: integer, minimum: 0 }
+        max: { type: integer, minimum: 1 }
+        remaining: { type: integer, minimum: 0 }
+
+    Problem:
+      $ref: "../../001-project-bootstrap/contracts/health.yaml#/components/schemas/Problem"
+
+  securitySchemes:
+    BearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

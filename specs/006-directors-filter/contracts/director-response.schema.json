@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-plot-twist/contracts/director-response.schema.json",
+  "title": "DirectorBatchResponse",
+  "description": "Structured output enforced on the LLM by `response_schema` (Gemini) or json-mode + post-validation (GitHub Models). Mirrors the Pydantic models in app/domain/director_verdicts.py.",
+  "type": "object",
+  "required": ["verdicts"],
+  "additionalProperties": false,
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "required": ["twist_id", "decision", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "twist_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Public id (UUID v4) of the twist being classified. MUST match one of the public_ids the model was given in the user prompt. Verdicts for unknown ids are ignored by the filter."
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "rejected_offensive",
+              "rejected_incoherent",
+              "rejected_spam"
+            ],
+            "description": "The classification. Maps 1:1 to `twists.status` after persistence."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Short Spanish justification. Server truncates to 80 chars with `…` if exceeded."
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "verdicts": [
+        {
+          "twist_id": "b1c2d3e4-1111-2222-3333-444455556666",
+          "decision": "approved",
+          "reason": "Continúa la trama del cliffhanger con tono coherente."
+        },
+        {
+          "twist_id": "c2d3e4f5-aaaa-bbbb-cccc-ddddeeeeffff",
+          "decision": "rejected_incoherent",
+          "reason": "No responde al cliffhanger; menciona elementos ajenos a la bible."
+        },
+        {
+          "twist_id": "d3e4f5a6-9999-8888-7777-666655554444",
+          "decision": "rejected_offensive",
+          "reason": "Lenguaje de odio dirigido."
+        }
+      ]
+    }
+  ]
+}

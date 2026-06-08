@@ -1,0 +1,177 @@
+openapi: 3.1.0
+info:
+  title: AI Plot Twist — Web Push (module 011)
+  version: 0.11.0
+  description: |
+    Subscribe / unsubscribe / public-key + admin test endpoint. The fan-out
+    itself is NOT an HTTP endpoint — it's a side-effect spawned by the FSM
+    executor (module 003) on ESTRENO transitions.
+
+servers:
+  - url: http://localhost:8000
+  - url: https://api.aiplottwist.example
+
+paths:
+  /api/v1/push/public-key:
+    get:
+      operationId: getPushPublicKey
+      summary: Return the VAPID public key for client subscriptions
+      description: |
+        Unauthenticated. Cached for 1 h at the edge. Key rotation requires
+        an API redeploy.
+      responses:
+        "200":
+          description: OK.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: ["public, max-age=3600"] }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicKey" }
+        "503":
+          description: vapid_not_configured.
+      tags: [push]
+
+  /api/v1/push/subscribe:
+    post:
+      operationId: postPushSubscribe
+      summary: Register or replace a push subscription
+      security:
+        - BearerJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubscribeRequest" }
+      responses:
+        "201":
+          description: Created or replaced.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubscribeResponse" }
+        "401":
+          description: Missing / invalid JWT.
+        "403":
+          description: Banned.
+        "422":
+          description: Bad body shape.
+        "503":
+          description: vapid_not_configured.
+      tags: [push]
+
+  /api/v1/push/subscriptions/{id}:
+    delete:
+      operationId: deletePushSubscription
+      summary: Unsubscribe (delete a subscription)
+      security:
+        - BearerJwt: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Deleted (or already gone — idempotent).
+        "401":
+          description: Missing / invalid JWT.
+        "403":
+          description: forbidden_not_owner.
+        "404":
+          description: subscription_not_found.
+      tags: [push]
+
+  /api/v1/internal/push/test:
+    post:
+      operationId: postInternalPushTest
+      summary: Send a test push to a specific user (admin)
+      security:
+        - AdminToken: []
+      parameters:
+        - in: query
+          name: force
+          required: false
+          schema: { type: boolean, default: false }
+          description: Bypass fan-out idempotency check.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminTestRequest" }
+      responses:
+        "200":
+          description: Result breakdown.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminTestResponse" }
+        "401":
+          description: Missing / invalid ADMIN_TOKEN.
+        "404":
+          description: target_user_not_found.
+      tags: [internal]
+
+components:
+  schemas:
+    PublicKey:
+      type: object
+      required: [public_key]
+      properties:
+        public_key:
+          type: string
+          description: Base64-url encoded P-256 public key.
+
+    SubscribeRequest:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint:
+          type: string
+          format: uri
+          maxLength: 1024
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string, maxLength: 200 }
+            auth:   { type: string, maxLength: 200 }
+        user_agent:
+          type: string
+          maxLength: 200
+          nullable: true
+
+    SubscribeResponse:
+      type: object
+      required: [subscription_id]
+      properties:
+        subscription_id:
+          type: integer
+
+    AdminTestRequest:
+      type: object
+      required: [target_user_public_id]
+      properties:
+        target_user_public_id:
+          type: string
+          format: uuid
+
+    AdminTestResponse:
+      type: object
+      required: [sent, failed, gone, skipped_idempotent]
+      properties:
+        sent: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        gone: { type: integer, minimum: 0 }
+        skipped_idempotent: { type: boolean }
+
+    Problem:
+      $ref: "../../001-project-bootstrap/contracts/health.yaml#/components/schemas/Problem"
+
+  securitySchemes:
+    BearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    AdminToken:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque

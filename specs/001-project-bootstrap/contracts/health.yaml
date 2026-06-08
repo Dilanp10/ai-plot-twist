@@ -1,0 +1,200 @@
+openapi: 3.1.0
+info:
+  title: AI Plot Twist — Bootstrap Contracts
+  version: 0.1.0
+  description: |
+    Endpoints introduced by module 001 (project-bootstrap). Only `/healthz` is
+    user-facing. `/api/v1/internal/transition` is HMAC-protected and is a stub in
+    this module — module 003 implements real FSM mutations.
+servers:
+  - url: http://localhost:8000
+    description: Local dev
+  - url: https://api.aiplottwist.example
+    description: Production (Fly.io)
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Liveness + DB health probe
+      description: |
+        Unauthenticated. Returns 200 if the API is alive AND the database
+        connection succeeds within 1 s. Returns 503 if any check fails.
+        Body schema is extensible: future modules may add keys to `checks`
+        without breaking existing consumers.
+      responses:
+        "200":
+          description: All checks healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthOk"
+              examples:
+                ok:
+                  value:
+                    status: ok
+                    checks:
+                      database: ok
+        "503":
+          description: At least one check failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthError"
+              examples:
+                dbDown:
+                  value:
+                    status: error
+                    checks:
+                      database: error
+      tags: [system]
+
+  /api/v1/internal/transition:
+    post:
+      operationId: postInternalTransition
+      summary: HMAC-signed FSM transition trigger (stub in this module)
+      description: |
+        Validates the `X-Tick-Signature` HMAC-SHA256 of the raw request body using
+        `TICK_SECRET`, and rejects requests whose `ts` is more than ±300 s from
+        server now. In module 001 the endpoint is a stub: it always responds
+        202 with `{"status":"accepted","noop":true}` on a valid signature.
+        Module 003 replaces the body with real state mutation logic.
+      parameters:
+        - in: header
+          name: X-Tick-Signature
+          required: true
+          schema:
+            type: string
+            description: |
+              Base64-encoded HMAC-SHA256 of the raw request body using TICK_SECRET.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TickPayload"
+      responses:
+        "202":
+          description: Signature valid; payload accepted (no-op in this module).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, noop]
+                properties:
+                  status:
+                    type: string
+                    enum: [accepted]
+                  noop:
+                    type: boolean
+                    description: True in module 001, false from module 003 onwards.
+        "401":
+          description: HMAC signature missing or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                bad:
+                  value:
+                    type: about:blank
+                    title: Invalid signature
+                    status: 401
+                    code: bad_hmac
+                    detail: HMAC verification failed.
+        "409":
+          description: Timestamp drift exceeds tolerance (±300 s) or trigger_id reused.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: Server misconfigured (TICK_SECRET not set).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+      tags: [internal]
+
+components:
+  schemas:
+    HealthOk:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, error]
+          required: [database]
+          properties:
+            database:
+              type: string
+              enum: [ok]
+    HealthError:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [error]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, error]
+
+    TickPayload:
+      type: object
+      required: [to, ts, trigger_id]
+      properties:
+        to:
+          type: string
+          description: Target FSM state (validated for shape only in this module).
+          enum: [ESTRENO, FILTERING, GENERACION, WATCHDOG]
+        ts:
+          type: integer
+          format: int64
+          description: Unix epoch seconds at the moment the cron computed the payload.
+        trigger_id:
+          type: string
+          description: |
+            Unique-per-trigger identifier (GitHub Actions run-id recommended).
+            Future modules use this to deduplicate.
+          minLength: 4
+          maxLength: 128
+
+    Problem:
+      description: RFC 7807 problem details.
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+          description: Stable machine-readable error code.
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+
+  securitySchemes:
+    HmacTick:
+      type: apiKey
+      in: header
+      name: X-Tick-Signature
+      description: HMAC-SHA256 over body using TICK_SECRET.
+
+security: []

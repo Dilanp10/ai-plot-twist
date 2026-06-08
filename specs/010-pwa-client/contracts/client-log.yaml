@@ -1,0 +1,92 @@
+openapi: 3.1.0
+info:
+  title: AI Plot Twist — Client Log (module 010)
+  version: 0.10.0
+  description: |
+    Unauthenticated client error sink. The PWA's global error handler and
+    `<ErrorBoundary>` component POST here. The endpoint is IP-rate-limited and
+    does NOT persist to DB; it structured-logs to stdout.
+
+servers:
+  - url: http://localhost:8000
+  - url: https://api.aiplottwist.example
+
+paths:
+  /api/v1/internal/client-log:
+    post:
+      operationId: postInternalClientLog
+      summary: Receive a client-side log event
+      description: |
+        No auth. Rate-limited to 5 reqs/min/IP via the rate_limit_buckets
+        backend from module 002. Payload is structured-logged; no DB write.
+        Also receives CSP `report-uri` violations (Phase 2 of CSP rollout).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientLogPayload" }
+          application/csp-report:
+            schema: { $ref: "#/components/schemas/CspReportPayload" }
+      responses:
+        "202":
+          description: Accepted. Body empty.
+        "413":
+          description: Payload too large (> 4 KB).
+        "422":
+          description: Malformed body.
+        "429":
+          description: Rate-limited. Includes Retry-After.
+          headers:
+            Retry-After:
+              schema: { type: integer }
+      tags: [internal]
+
+components:
+  schemas:
+    ClientLogPayload:
+      type: object
+      required: [event, user_agent, app_version, timestamp]
+      additionalProperties: false
+      properties:
+        event:
+          type: string
+          enum: [unhandled_error, unhandled_rejection, boundary_caught,
+                 csp_violation, custom]
+          maxLength: 32
+        message:
+          type: string
+          maxLength: 500
+          nullable: true
+        stack:
+          type: string
+          maxLength: 3000
+          nullable: true
+        route:
+          type: string
+          maxLength: 200
+          nullable: true
+        user_agent:
+          type: string
+          maxLength: 200
+        app_version:
+          type: string
+          maxLength: 50
+          description: "Semver + commit short SHA, e.g. 1.2.3-abc123"
+        timestamp:
+          type: string
+          format: date-time
+        extra:
+          type: object
+          maxProperties: 10
+          description: "Free-form extra context (≤ 500 bytes serialized)."
+
+    CspReportPayload:
+      type: object
+      description: |
+        CSP violation reports per the W3C report-uri format. We accept this
+        shape verbatim and translate to `ClientLogPayload` with
+        `event=csp_violation` server-side for unified logging.
+      properties:
+        csp-report:
+          type: object
+          additionalProperties: true

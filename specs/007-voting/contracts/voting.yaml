@@ -1,0 +1,167 @@
+openapi: 3.1.0
+info:
+  title: AI Plot Twist — Voting (module 007)
+  version: 0.7.0
+  description: |
+    Authenticated vote-feed and atomic vote-cast. Active only during VOTACION.
+
+servers:
+  - url: http://localhost:8000
+  - url: https://api.aiplottwist.example
+
+paths:
+  /api/v1/twists/vote-feed:
+    get:
+      operationId: getTwistsVoteFeed
+      summary: Approved twists for the current live chapter, paginated
+      security:
+        - BearerJwt: []
+      parameters:
+        - in: query
+          name: sort
+          required: false
+          schema:
+            type: string
+            enum: [random, recent, hot]
+            default: random
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+            description: Opaque cursor returned by a previous call (base64 JSON).
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoteFeedResponse" }
+        "401":
+          description: Missing / invalid JWT.
+        "403":
+          description: Banned user.
+        "409":
+          description: |
+            Reasons:
+            - `window_closed` — not in VOTACION or past vote_until.
+        "422":
+          description: |
+            Bad params:
+            - `cursor_invalid` — cursor sort doesn't match query sort, or malformed.
+            - `limit_out_of_range`.
+        "503":
+          description: under_maintenance.
+      tags: [voting]
+
+  /api/v1/twists/vote:
+    post:
+      operationId: postTwistsVote
+      summary: Cast a single vote for an approved twist
+      security:
+        - BearerJwt: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string, format: uuid }
+          description: Optional. Operation is naturally idempotent on (twist_id, user_id).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VoteRequest" }
+      responses:
+        "200":
+          description: Vote persisted (or already present — idempotent path also returns 200).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoteResponse" }
+        "401":
+          description: Missing / invalid JWT.
+        "403":
+          description: Banned.
+        "409":
+          description: |
+            Reasons:
+            - `window_closed`
+            - `over_quota`
+            - `already_voted`
+            - `twist_not_votable` (twist not approved or soft-deleted)
+            - `chapter_mismatch`
+            - `cannot_self_vote` (only when ALLOW_SELF_VOTE=false)
+        "422":
+          description: Bad body.
+        "503":
+          description: under_maintenance or lock_busy.
+      tags: [voting]
+
+components:
+  schemas:
+    VoteFeedResponse:
+      type: object
+      required: [items, page, user_quota]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FeedItem" }
+        page: { $ref: "#/components/schemas/Page" }
+        user_quota: { $ref: "#/components/schemas/Quota" }
+
+    FeedItem:
+      type: object
+      required: [id, content, vote_count, has_my_vote]
+      properties:
+        id: { type: string, format: uuid }
+        content: { type: string, maxLength: 280 }
+        vote_count: { type: integer, minimum: 0 }
+        has_my_vote: { type: boolean }
+
+    Page:
+      type: object
+      required: [limit, total_approved]
+      properties:
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque; pass back as ?cursor= to fetch next page.
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        total_approved: { type: integer, minimum: 0 }
+
+    Quota:
+      type: object
+      required: [used, max, remaining]
+      properties:
+        used: { type: integer, minimum: 0 }
+        max: { type: integer, minimum: 1 }
+        remaining: { type: integer, minimum: 0 }
+
+    VoteRequest:
+      type: object
+      required: [twist_id]
+      properties:
+        twist_id: { type: string, format: uuid }
+
+    VoteResponse:
+      type: object
+      required: [twist_id, new_vote_count, user_quota]
+      properties:
+        twist_id: { type: string, format: uuid }
+        new_vote_count: { type: integer, minimum: 1 }
+        user_quota: { $ref: "#/components/schemas/Quota" }
+
+    Problem:
+      $ref: "../../001-project-bootstrap/contracts/health.yaml#/components/schemas/Problem"
+
+  securitySchemes:
+    BearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

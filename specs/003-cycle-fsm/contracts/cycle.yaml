@@ -1,0 +1,255 @@
+openapi: 3.1.0
+info:
+  title: AI Plot Twist — Cycle FSM Contracts (module 003)
+  version: 0.3.0
+  description: |
+    Promotes `/internal/transition` from module 001 stub to the real state engine.
+    Adds `/internal/kill-switch` and `/internal/health/cycle`.
+servers:
+  - url: http://localhost:8000
+  - url: https://api.aiplottwist.example
+
+paths:
+  /api/v1/internal/transition:
+    post:
+      operationId: postInternalTransition
+      summary: Advance the FSM (real implementation, replaces 001 stub)
+      description: |
+        HMAC-validated, replay-protected, mutex-protected. On success, mutates
+        `cycles.state`, appends a `state_transitions` row, and may schedule a
+        background side-effect. Idempotent on `(cycle_id, to_state, trigger_id)`.
+      parameters:
+        - in: header
+          name: X-Tick-Signature
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TickPayload" }
+      responses:
+        "202":
+          description: Transition accepted (side-effect, if any, runs async).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TickAccepted" }
+        "200":
+          description: Already applied (idempotent replay).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TickAlreadyApplied" }
+        "401":
+          description: HMAC missing / invalid.
+        "409":
+          description: |
+            Illegal transition OR time-fence violation OR kill-switch active.
+            See `code` field.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                illegal:
+                  value:
+                    type: about:blank
+                    title: Illegal transition
+                    status: 409
+                    code: illegal_transition
+                    detail: "VOTACION cannot transition to ESTRENO"
+                fence:
+                  value:
+                    type: about:blank
+                    title: Time fence violation
+                    status: 409
+                    code: time_fence_violation
+                    detail: "min_dwell of 5h30m not yet met"
+                kill:
+                  value:
+                    type: about:blank
+                    title: Kill-switch active
+                    status: 409
+                    code: kill_switch_active
+                    detail: "rebuild s01 bible"
+        "422":
+          description: Missing `trigger_id`, malformed body, or no active season.
+        "503":
+          description: Lock-busy after 2 s wait. Caller should retry.
+      tags: [internal]
+
+  /api/v1/internal/kill-switch:
+    post:
+      operationId: postInternalKillSwitch
+      summary: Set the global kill-switch (PO emergency stop)
+      description: |
+        Requires `Authorization: Bearer <ADMIN_TOKEN>` (separate from JWT).
+        Setting `on=true` makes future cron ticks no-op and surfaces 503 on
+        `/chapters/today`.
+      security:
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KillSwitchRequest" }
+      responses:
+        "200":
+          description: Flag updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KillSwitchResponse" }
+        "401":
+          description: Missing / invalid ADMIN_TOKEN.
+      tags: [internal]
+
+  /api/v1/internal/health/cycle:
+    get:
+      operationId: getInternalHealthCycle
+      summary: Operational health of the daily cycle
+      description: |
+        Unauthenticated. Exposes only operational data (state names, timestamps,
+        public ids). Safe for status pages.
+      responses:
+        "200":
+          description: Health report.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CycleHealth" }
+        "503":
+          description: No active season; cycle not bootstrapped yet.
+      tags: [internal]
+
+components:
+  schemas:
+    TickPayload:
+      type: object
+      required: [to, ts, trigger_id]
+      properties:
+        to:
+          type: string
+          enum: [ESTRENO, FILTERING, GENERACION, WATCHDOG]
+          description: |
+            The target state. `WATCHDOG` is a no-mutation health probe consumed by
+            the 23:55 ART workflow.
+        ts:
+          type: integer
+          format: int64
+        trigger_id:
+          type: string
+          minLength: 4
+          maxLength: 128
+        retry_attempt:
+          type: integer
+          minimum: 1
+          default: 1
+          description: |
+            GitHub Actions `GITHUB_RUN_ATTEMPT`. If > 1, the endpoint treats it
+            like any other replay (idempotent).
+
+    TickAccepted:
+      type: object
+      required: [status, cycle_id, from_state, to_state, transition_id]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        cycle_id:
+          type: integer
+        from_state:
+          type: string
+        to_state:
+          type: string
+        transition_id:
+          type: integer
+        side_effect_scheduled:
+          type: string
+          nullable: true
+          description: |
+            Name of the background task scheduled (e.g. "director_filter") or
+            null if none.
+
+    TickAlreadyApplied:
+      type: object
+      required: [status, transition_id, applied_at]
+      properties:
+        status:
+          type: string
+          enum: [already_applied]
+        transition_id:
+          type: integer
+        applied_at:
+          type: string
+          format: date-time
+
+    KillSwitchRequest:
+      type: object
+      required: [on]
+      properties:
+        on:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 200
+          nullable: true
+
+    KillSwitchResponse:
+      type: object
+      required: [on, reason, updated_at]
+      properties:
+        on:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+
+    CycleHealth:
+      type: object
+      required: [season_slug, cycle, recent_transitions, kill_switch, schedule]
+      properties:
+        season_slug:
+          type: string
+        cycle:
+          type: object
+          required: [id, state, state_entered_at, time_in_state_seconds, cycle_date]
+          properties:
+            id: { type: integer }
+            state: { type: string }
+            state_entered_at: { type: string, format: date-time }
+            time_in_state_seconds: { type: integer }
+            cycle_date: { type: string, format: date }
+            chapter_day_index: { type: integer }
+            next_chapter_ready: { type: boolean }
+        recent_transitions:
+          type: array
+          items:
+            type: object
+            properties:
+              from_state: { type: string }
+              to_state: { type: string }
+              triggered_by: { type: string }
+              created_at: { type: string, format: date-time }
+        kill_switch:
+          type: object
+          properties:
+            on: { type: boolean }
+            reason: { type: string, nullable: true }
+        schedule:
+          type: array
+          description: Upcoming ticks in the next 24 h (UTC times).
+          items:
+            type: object
+            properties:
+              tick: { type: string, enum: [ESTRENO, FILTERING, GENERACION, WATCHDOG] }
+              expected_at: { type: string, format: date-time }
+
+    Problem:
+      $ref: "../../001-project-bootstrap/contracts/health.yaml#/components/schemas/Problem"
+
+  securitySchemes:
+    AdminToken:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: ADMIN_TOKEN Fly secret.

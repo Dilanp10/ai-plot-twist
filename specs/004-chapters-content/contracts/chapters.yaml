@@ -1,0 +1,249 @@
+openapi: 3.1.0
+info:
+  title: AI Plot Twist — Chapter Content (module 004)
+  version: 0.4.0
+  description: |
+    Read-only public endpoints for the day's chapter, archived chapters, and
+    season meta. All endpoints honor the system kill-switch. No auth.
+
+servers:
+  - url: http://localhost:8000
+  - url: https://api.aiplottwist.example
+
+paths:
+  /api/v1/chapters/today:
+    get:
+      operationId: getChaptersToday
+      summary: Today's chapter + cycle state + window times
+      description: |
+        Returns the chapter currently held by the active cycle, plus the FSM state
+        and the four window timestamps the PWA needs to drive its UI. ETag-based
+        conditional GET supported.
+      parameters:
+        - in: header
+          name: If-None-Match
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: "public, max-age=60, stale-while-revalidate=600, must-revalidate"
+            ETag:
+              schema: { type: string }
+              description: 16-char hex.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TodayResponse" }
+              examples:
+                receptionPhase:
+                  value:
+                    cycle_state: RECEPCION_IDEAS
+                    season: { slug: "s01-el-tunel", title: "El Túnel" }
+                    chapter:
+                      id: "9f3a3b5f-…-7e2c"
+                      day_index: 7
+                      title: "Lo que había detrás del espejo"
+                      synopsis: "Mariana cruza el umbral y descubre que…"
+                      released_at: "2026-06-08T15:00:00Z"
+                      panels:
+                        - idx: 1
+                          image_url: "https://assets.aiplottwist.example/s01/9f3a…/1-a1b2c3d4.webp"
+                          image_blurhash: "LKO2?V%2Tw=w]~RBVZRi};RPxuwH"
+                          tts_url: "https://assets.aiplottwist.example/s01/9f3a…/1-tts.mp3"
+                          narration: "El espejo crujió como hielo viejo…"
+                          mood: tense
+                      cliffhanger: "Una voz —la suya— le respondió desde el otro lado."
+                    windows:
+                      submit_until: "2026-06-08T21:00:00Z"
+                      vote_from:    "2026-06-08T21:00:00Z"
+                      vote_until:   "2026-06-09T02:00:00Z"
+                      next_release: "2026-06-09T15:00:00Z"
+        "304":
+          description: Not Modified (ETag matched).
+        "404":
+          description: No live chapter yet (cycle exists but day-1 not released).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: under_maintenance OR no_active_season.
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: ["no-store"] }
+            Retry-After:
+              schema: { type: integer }
+              description: Present on under_maintenance.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+      tags: [chapters]
+
+  /api/v1/chapters/{public_id}:
+    get:
+      operationId: getChapterById
+      summary: Read a specific chapter (live or archived)
+      parameters:
+        - in: path
+          name: public_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: If-None-Match
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: |
+                For archived chapters: "public, max-age=86400, immutable".
+                For the currently live chapter: "public, max-age=60, stale-while-revalidate=600".
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChapterResponse" }
+        "304":
+          description: Not Modified.
+        "404":
+          description: chapter_not_found.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: under_maintenance.
+      tags: [chapters]
+
+  /api/v1/seasons/{slug}:
+    get:
+      operationId: getSeasonBySlug
+      summary: Season meta + public bible
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: "public, max-age=300, stale-while-revalidate=3600"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SeasonResponse" }
+        "404":
+          description: season_not_found.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "503":
+          description: under_maintenance.
+      tags: [seasons]
+
+components:
+  schemas:
+    TodayResponse:
+      type: object
+      required: [cycle_state, season, chapter, windows]
+      properties:
+        cycle_state:
+          type: string
+          enum: [PENDING_RELEASE, ESTRENO, RECEPCION_IDEAS, FILTERING, VOTACION,
+                 GENERACION, FAILED]
+        season: { $ref: "#/components/schemas/SeasonBrief" }
+        chapter: { $ref: "#/components/schemas/Chapter" }
+        windows: { $ref: "#/components/schemas/Windows" }
+
+    ChapterResponse:
+      type: object
+      required: [season, chapter]
+      properties:
+        season: { $ref: "#/components/schemas/SeasonBrief" }
+        chapter: { $ref: "#/components/schemas/Chapter" }
+
+    SeasonResponse:
+      type: object
+      required: [season]
+      properties:
+        season: { $ref: "#/components/schemas/SeasonFull" }
+
+    SeasonBrief:
+      type: object
+      required: [slug, title]
+      properties:
+        slug: { type: string }
+        title: { type: string }
+
+    SeasonFull:
+      type: object
+      required: [slug, title, bible_public, started_on, chapter_count,
+                 current_day_index]
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        bible_public:
+          type: object
+          description: |
+            Redacted bible: only the public allowlisted keys (setting, tone,
+            characters, rules). Authorial secrets are excluded.
+          properties:
+            setting:    { type: string }
+            tone:       { type: array, items: { type: string } }
+            characters:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:      { type: string }
+                  archetype: { type: string }
+            rules:      { type: array, items: { type: string } }
+        started_on:        { type: string, format: date }
+        ended_on:          { type: string, format: date, nullable: true }
+        chapter_count:     { type: integer, minimum: 0 }
+        current_day_index: { type: integer, minimum: 0 }
+
+    Chapter:
+      type: object
+      required: [id, day_index, title, synopsis, released_at, panels, cliffhanger]
+      properties:
+        id:           { type: string, format: uuid }
+        day_index:    { type: integer, minimum: 1 }
+        title:        { type: string }
+        synopsis:     { type: string }
+        released_at:  { type: string, format: date-time }
+        panels:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: { $ref: "#/components/schemas/Panel" }
+        cliffhanger:  { type: string }
+
+    Panel:
+      type: object
+      required: [idx, image_url, narration, mood]
+      properties:
+        idx:            { type: integer, minimum: 1 }
+        image_url:      { type: string, format: uri }
+        image_blurhash: { type: string, nullable: true }
+        tts_url:        { type: string, format: uri, nullable: true }
+        narration:      { type: string }
+        mood:           { type: string }
+
+    Windows:
+      type: object
+      required: [submit_until, vote_from, vote_until, next_release]
+      properties:
+        submit_until: { type: string, format: date-time }
+        vote_from:    { type: string, format: date-time }
+        vote_until:   { type: string, format: date-time }
+        next_release: { type: string, format: date-time }
+
+    Problem:
+      $ref: "../../001-project-bootstrap/contracts/health.yaml#/components/schemas/Problem"

@@ -1,0 +1,218 @@
+openapi: 3.1.0
+info:
+  title: AI Plot Twist — Auth Contracts (module 002)
+  version: 0.2.0
+  description: |
+    Invite-redemption, JWT-refresh, and user-introspection endpoints. HS256 JWTs.
+    Closed beta — no email, no password.
+servers:
+  - url: http://localhost:8000
+  - url: https://api.aiplottwist.example
+
+paths:
+  /api/v1/auth/redeem-invite:
+    post:
+      operationId: postAuthRedeemInvite
+      summary: Redeem an invite code, create a user, issue a JWT + device_secret
+      description: |
+        Single-use redemption. Rate-limited per source IP (5 attempts / 1-hour
+        sliding window). Returns 404 (collapsed) for non-existent, redeemed,
+        revoked, or expired codes to avoid information leakage. Atomic on the
+        invite row (`SELECT … FOR UPDATE`).
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RedeemRequest" }
+      responses:
+        "201":
+          description: Created. JWT + device_secret returned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RedeemResponse" }
+              examples:
+                ok:
+                  value:
+                    user:
+                      public_id: "9f3a3b5f-…-7e2c"
+                      display_name: "Lucía"
+                      created_at: "2026-06-08T13:42:00Z"
+                    jwt: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.…"
+                    device_secret: "aZ6n…-base64url-43chars"
+                    jwt_expires_at: "2026-09-06T13:42:00Z"
+        "404":
+          description: Invite not redeemable (collapsed: unknown, redeemed, revoked, expired).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+              examples:
+                bad:
+                  value:
+                    type: about:blank
+                    title: Invite not redeemable
+                    status: 404
+                    code: invite_not_redeemable
+                    detail: Ese código no es válido o ya fue usado.
+        "409":
+          description: |
+            Collision: either `invite_already_redeemed` (race-loser) or
+            `display_name_invalid` (failed normalization).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422":
+          description: Request body failed schema validation.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "429":
+          description: Rate-limited by IP. Includes `Retry-After`.
+          headers:
+            Retry-After:
+              schema: { type: integer }
+              description: Seconds until the bucket resets.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+      tags: [auth]
+
+  /api/v1/auth/refresh:
+    post:
+      operationId: postAuthRefresh
+      summary: Issue a fresh JWT from the device_secret
+      description: |
+        The PWA calls this on first 401 from any other endpoint. Returns a new
+        JWT (90 d). The device_secret is unchanged. Banned users get 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
+      responses:
+        "200":
+          description: New JWT issued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RefreshResponse" }
+        "401":
+          description: device_secret invalid (or banned — collapsed).
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+      tags: [auth]
+
+  /api/v1/auth/me:
+    get:
+      operationId: getAuthMe
+      summary: Return the authenticated user
+      description: Requires a valid JWT. Side-effect updates `users.last_seen_at`.
+      security:
+        - BearerJwt: []
+      responses:
+        "200":
+          description: User info.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+        "401":
+          description: Missing / invalid / expired JWT.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "403":
+          description: User is banned.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+      tags: [auth]
+
+components:
+  schemas:
+    RedeemRequest:
+      type: object
+      required: [invite_code, display_name]
+      properties:
+        invite_code:
+          type: string
+          pattern: "^[A-Za-z2-7]{4}-?[A-Za-z2-7]{4}$"
+          description: |
+            Case-insensitive; the hyphen is optional in transport. Server
+            canonicalizes to uppercase `XXXX-XXXX` before lookup.
+        display_name:
+          type: string
+          minLength: 2
+          maxLength: 24
+          description: NFKC-normalized server-side; control chars stripped.
+
+    RedeemResponse:
+      type: object
+      required: [user, jwt, device_secret, jwt_expires_at]
+      properties:
+        user:
+          $ref: "#/components/schemas/PublicUser"
+        jwt:
+          type: string
+          description: HS256-signed JWT. Bearer-prefix when sending in headers.
+        device_secret:
+          type: string
+          description: |
+            Base64url-encoded 32-byte random. Client persists this in IndexedDB.
+            Never sent to the server again except in `/auth/refresh`.
+        jwt_expires_at:
+          type: string
+          format: date-time
+          description: Convenience for the client; mirrors the `exp` claim.
+
+    RefreshRequest:
+      type: object
+      required: [device_secret]
+      properties:
+        device_secret:
+          type: string
+
+    RefreshResponse:
+      type: object
+      required: [jwt, jwt_expires_at]
+      properties:
+        jwt:
+          type: string
+        jwt_expires_at:
+          type: string
+          format: date-time
+
+    MeResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: "#/components/schemas/PublicUser"
+
+    PublicUser:
+      type: object
+      required: [public_id, display_name, created_at, last_seen_at]
+      properties:
+        public_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+
+    Problem:
+      $ref: "../../001-project-bootstrap/contracts/health.yaml#/components/schemas/Problem"
+
+  securitySchemes:
+    BearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

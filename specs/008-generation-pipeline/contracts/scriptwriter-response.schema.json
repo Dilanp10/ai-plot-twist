@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-plot-twist/contracts/scriptwriter-response.schema.json",
+  "title": "ScriptwriterResponse",
+  "description": "Structured output enforced on the LLM via response_schema. Mirrors the Pydantic model in app/domain/scriptwriter_response.py.",
+  "type": "object",
+  "required": ["title", "synopsis", "panels", "cliffhanger", "next_cliffhanger_seed"],
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 80,
+      "description": "Spanish. Display title of the chapter."
+    },
+    "synopsis": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 400,
+      "description": "Spanish. One-paragraph summary. NOT a spoiler — the cliffhanger remains separate."
+    },
+    "panels": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["idx", "narration", "visual_prompt", "mood", "tts_text"],
+        "additionalProperties": false,
+        "properties": {
+          "idx": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8,
+            "description": "1-based ordinal. Must be unique and contiguous within the response."
+          },
+          "narration": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 500,
+            "description": "Spanish. The text that appears on-screen with the panel image."
+          },
+          "visual_prompt": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 400,
+            "description": "ENGLISH. Optimized for diffusion models. Pydantic validator enforces > 80% ASCII printable characters."
+          },
+          "mood": {
+            "type": "string",
+            "enum": ["tense","ominous","contemplative","hopeful","absurd","melancholic","euphoric","dread","tender"],
+            "description": "Used by the PWA for subtle UI tinting."
+          },
+          "tts_text": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 500,
+            "description": "Spanish. The text fed to the TTS engine. May differ slightly from `narration` (e.g., expanded acronyms)."
+          }
+        }
+      }
+    },
+    "cliffhanger": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 300,
+      "description": "Spanish. The hook that closes this chapter. Tomorrow's twists will respond to it."
+    },
+    "next_cliffhanger_seed": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 300,
+      "description": "Spanish. A seed phrase used by the AUTO-CONTINUE fallback if no twists are approved for the next chapter. NOT shown to users."
+    }
+  },
+  "examples": [
+    {
+      "title": "Lo que había detrás del espejo",
+      "synopsis": "Mariana acepta la propuesta del reflejo y descubre que su otra-yo viene de un 1998 alterno…",
+      "panels": [
+        {
+          "idx": 1,
+          "narration": "El espejo crujió como hielo viejo, y la otra Mariana extendió la mano.",
+          "visual_prompt": "a woman in her 30s reaches her hand into a fractured antique mirror, dim Buenos Aires apartment, 35mm film, cinematic, moody lighting, no text",
+          "mood": "tense",
+          "tts_text": "El espejo crujió como hielo viejo. La otra Mariana extendió la mano."
+        },
+        {
+          "idx": 2,
+          "narration": "Del otro lado, un Buenos Aires sin teléfonos celulares: lluvia, cabinas verdes, calles vacías.",
+          "visual_prompt": "1998 Buenos Aires street at night, green phone booths, wet pavement, no cellphones, slow rain, 35mm film, cinematic, no text",
+          "mood": "melancholic",
+          "tts_text": "Del otro lado, un Buenos Aires sin teléfonos celulares: lluvia, cabinas verdes, calles vacías."
+        },
+        {
+          "idx": 3,
+          "narration": "—¿Por qué viniste? —preguntó la otra. La Mariana de hoy no tenía respuesta.",
+          "visual_prompt": "close-up of two women facing each other, identical faces, one slightly older, soft shadow, 35mm film, cinematic, dramatic, no text",
+          "mood": "contemplative",
+          "tts_text": "¿Por qué viniste? preguntó la otra. La Mariana de hoy no tenía respuesta."
+        }
+      ],
+      "cliffhanger": "Entonces escuchó la voz de su madre desde la cocina —la madre que enterró hace diez años.",
+      "next_cliffhanger_seed": "La madre del 1998 alterno está viva pero algo en su voz no es del todo humano."
+    }
+  ]
+}
