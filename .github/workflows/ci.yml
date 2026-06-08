@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs on the same branch when a new push arrives.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Placeholder env vars shared by jobs that don't need a real DB/secrets.
+# The `api` job overrides DATABASE_URL with its Postgres service container.
+env:
+  ENV: test
+  JWT_SECRET: ci-placeholder-jwt-secret
+  TICK_SECRET: ci-placeholder-tick-secret
+  DATABASE_URL: postgresql+asyncpg://__placeholder__@localhost:1/__none__
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # API — lint, type-check, and test against an ephemeral Postgres 16
+  # ──────────────────────────────────────────────────────────────────────────
+  api:
+    name: API — check + test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: aiplottwist
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.11"
+          # Cache the uv tool cache keyed on the lockfile.
+          enable-cache: true
+          cache-dependency-glob: "apps/api/uv.lock"
+
+      - name: Install Python deps
+        working-directory: apps/api
+        run: uv sync --frozen
+
+      - name: Lint + type-check (ruff + mypy --strict)
+        working-directory: apps/api
+        run: uv run ruff check . && uv run mypy --strict app/
+
+      - name: Test suite (pytest)
+        working-directory: apps/api
+        env:
+          # Override the env-level placeholder with the real service container URL.
+          DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/aiplottwist
+        run: uv run pytest -q
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Web — type-check (svelte-check), lint (eslint), and unit tests (vitest)
+  # ──────────────────────────────────────────────────────────────────────────
+  web:
+    name: Web — check + test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install Node deps
+        # --ignore-scripts: skip the postinstall hook (uv sync).
+        # The web job does not need Python; uv is not installed here.
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Check (svelte-check + eslint)
+        run: pnpm check:web
+
+      - name: Test (vitest)
+        run: pnpm test:web
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # OpenAPI freshness — re-export the schema and assert no diff vs. committed
+  # ──────────────────────────────────────────────────────────────────────────
+  openapi-fresh:
+    name: OpenAPI freshness gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "apps/api/uv.lock"
+
+      - name: Install Python deps
+        working-directory: apps/api
+        run: uv sync --frozen
+
+      - name: Re-export OpenAPI schema
+        working-directory: apps/api
+        # The placeholder DATABASE_URL comes from the job-level env above.
+        # The export script only imports the FastAPI app — it never connects.
+        run: uv run python ../../scripts/export_openapi.py
+
+      - name: Assert committed schema is current
+        # Fails the job if apps/api/openapi.json was not regenerated with
+        # the latest code. The error message shows exactly which lines differ.
+        run: git diff --exit-code apps/api/openapi.json
