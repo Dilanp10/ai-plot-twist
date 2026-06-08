@@ -10,7 +10,7 @@
     "preview": "vite preview --port 5173",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "tsc --noEmit && eslint .",
+    "check": "svelte-check --tsconfig ./tsconfig.json && eslint .",
     "format": "prettier --write ."
   },
   "devDependencies": {
