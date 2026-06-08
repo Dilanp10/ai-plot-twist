@@ -1,6 +1,6 @@
-"""Integration test: migration 0002 (users + invites) round-trip.
+"""Integration tests: migration round-trips for module 002.
 
-Module 002 / Task T-001.
+Module 002 / Tasks T-001, T-002.
 
 Skips when DATABASE_URL is the conftest placeholder (no real DB available).
 CI provides Postgres via a ``services:`` block.
@@ -84,3 +84,37 @@ async def test_0002_upgrade_then_downgrade() -> None:
     await asyncio.to_thread(command.upgrade, cfg, "head")
     final = await _tables_exist(database_url, "invites", "users")
     assert final["invites"] and final["users"]
+
+
+async def test_0003_upgrade_then_downgrade() -> None:
+    """Round-trip upgrade/downgrade twice; rate_limit_buckets appears and disappears cleanly."""
+    from tests.conftest import _is_placeholder_database_url
+
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url or _is_placeholder_database_url(database_url):
+        pytest.skip(
+            "DATABASE_URL no apunta a una base real. "
+            "Levantá Postgres (`pnpm db:up`) y exportá la URL para correr este test."
+        )
+
+    cfg = _alembic_config(database_url)
+
+    for cycle_idx in range(2):
+        await asyncio.to_thread(command.upgrade, cfg, "head")
+
+        present = await _tables_exist(database_url, "rate_limit_buckets")
+        assert present["rate_limit_buckets"], (
+            f"ciclo {cycle_idx}: rate_limit_buckets debería existir tras upgrade"
+        )
+
+        await asyncio.to_thread(command.downgrade, cfg, "base")
+
+        gone = await _tables_exist(database_url, "rate_limit_buckets")
+        assert not gone["rate_limit_buckets"], (
+            f"ciclo {cycle_idx}: rate_limit_buckets debería estar borrada tras downgrade"
+        )
+
+    # Dejar la DB en estado usable para tests subsiguientes.
+    await asyncio.to_thread(command.upgrade, cfg, "head")
+    final = await _tables_exist(database_url, "rate_limit_buckets")
+    assert final["rate_limit_buckets"]
