@@ -24,6 +24,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
+from app.api.internal_transition import router as internal_transition_router
 from app.db import dispose_engine
 from app.errors import ProblemDetail, problem_handler
 from app.logging import configure_logging, get_logger
@@ -100,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Mount routers
     app.include_router(health_router)
+    app.include_router(internal_transition_router)
 
     return app
 
