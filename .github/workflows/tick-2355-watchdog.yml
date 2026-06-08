@@ -1,0 +1,42 @@
+name: tick-2355-watchdog
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Watchdog tick — verifies HMAC + liveness 5 min after the generation tick.
+# Does NOT mutate state; the stub returns 202 {accepted, noop:true} for WATCHDOG.
+# Module 003 will add a real no-op health-gate response.
+#
+# Cron schedule — DISABLED until module 003 implements the real FSM.
+# To enable: uncomment the `schedule:` block and open a PR.
+#
+# schedule:
+#   - cron: '55 2 * * *'  # 02:55 UTC = 23:55 ART (America/Argentina/Buenos_Aires, UTC-3, no DST)
+#
+# Required GitHub secrets: API_URL, TICK_SECRET
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Compute HMAC-SHA256 and POST watchdog tick
+        env:
+          TICK_SECRET: ${{ secrets.TICK_SECRET }}
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          ts=$(date -u +%s)
+          body=$(jq -nc \
+            --arg to   "WATCHDOG" \
+            --argjson ts "$ts" \
+            --arg run  "$GITHUB_RUN_ID" \
+            '{to: $to, ts: $ts, trigger_id: $run}')
+          sig=$(printf '%s' "$body" | \
+            openssl dgst -sha256 -hmac "$TICK_SECRET" -binary | base64)
+          curl --fail --silent --show-error \
+            -X POST "${API_URL}/api/v1/internal/transition" \
+            -H "Content-Type: application/json" \
+            -H "X-Tick-Signature: ${sig}" \
+            -d "$body"

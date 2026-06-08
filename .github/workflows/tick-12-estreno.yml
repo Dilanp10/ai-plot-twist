@@ -1,0 +1,40 @@
+name: tick-12-estreno
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Cron schedule — DISABLED until module 003 implements the real FSM.
+# To enable: uncomment the `schedule:` block and open a PR.
+#
+# schedule:
+#   - cron: '0 15 * * *'   # 15:00 UTC = 12:00 ART (America/Argentina/Buenos_Aires, UTC-3, no DST)
+#
+# Required GitHub secrets:
+#   API_URL    — full base URL of the deployed API, e.g. https://ai-plot-twist.fly.dev
+#   TICK_SECRET — shared HMAC-SHA256 secret, must match the server's TICK_SECRET env var
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:   # manual trigger only while schedule is disabled
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Compute HMAC-SHA256 and POST transition
+        env:
+          TICK_SECRET: ${{ secrets.TICK_SECRET }}
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          ts=$(date -u +%s)
+          body=$(jq -nc \
+            --arg to   "ESTRENO" \
+            --argjson ts "$ts" \
+            --arg run  "$GITHUB_RUN_ID" \
+            '{to: $to, ts: $ts, trigger_id: $run}')
+          sig=$(printf '%s' "$body" | \
+            openssl dgst -sha256 -hmac "$TICK_SECRET" -binary | base64)
+          curl --fail --silent --show-error \
+            -X POST "${API_URL}/api/v1/internal/transition" \
+            -H "Content-Type: application/json" \
+            -H "X-Tick-Signature: ${sig}" \
+            -d "$body"
