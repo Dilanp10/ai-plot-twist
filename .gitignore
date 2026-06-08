@@ -10,7 +10,10 @@ __pycache__/
 .venv/
 venv/
 env/
+# Ignore local pyenv pins globally, but track apps/api's pin which determines
+# the Python version for the project (uv reads this file during uv sync).
 .python-version
+!apps/api/.python-version
 
 # Test / type / lint caches
 .pytest_cache/
@@ -81,6 +84,7 @@ pnpm-debug.log*
 
 # ─────────────────────────────────────────────────────────────
 # What is INTENTIONALLY tracked (do not add to this file):
+#   apps/api/.python-version      ← committed (pins Python 3.11 for uv)
 #   apps/api/uv.lock              ← committed (reproducible installs)
 #   pnpm-lock.yaml                ← committed (frozen-install in CI)
 #   apps/web/pnpm-lock.yaml       ← committed

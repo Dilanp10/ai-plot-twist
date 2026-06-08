@@ -1,0 +1,16 @@
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+# B008: do not perform function calls in default argument values.
+# Disabled because FastAPI's Depends() pattern relies on this idiom.
+ignore = ["B008"]
+
+[lint.isort]
+known-first-party = ["app"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
