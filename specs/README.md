@@ -12,7 +12,7 @@ project rules live in [../.specify/memory/constitution.md](../.specify/memory/co
 
 | # | Module | Status | Depends on | Summary |
 |---|---|---|---|---|
-| [001](./001-project-bootstrap/) | `project-bootstrap` | `spec-done` | — | Repo skeleton (FastAPI + PWA), Fly.io + Neon + R2 + Pages + GH Actions cron heartbeat; `GET /healthz`; zero business logic. |
+| [001](./001-project-bootstrap/) | `project-bootstrap` | `done` | — | Repo skeleton (FastAPI + PWA), Fly.io + Neon + R2 + Pages + GH Actions cron heartbeat; `GET /healthz`; zero business logic. |
 | [002](./002-auth-invite-flow/) | `auth-invite-flow` | `spec-done` | 001 | Invite-code redemption + device-bound JWT (HS256, 90 d, refresh via `device_secret`), 3 endpoints, 3 CLIs, PWA onboarding screen. |
 | [003](./003-cycle-fsm/) | `cycle-fsm` | `spec-done` | 001 | FSM 8 estados, advisory locks, idempotency UNIQUE, replace stub `/internal/transition` con executor real, kill-switch, watchdog, 4 cron workflows habilitados, stubs de side-effects para 006/008. |
 | [004](./004-chapters-content/) | `chapters-content` | `spec-done` | 001, 003 | 3 endpoints read-only (`/chapters/today`, `/chapters/{id}`, `/seasons/{slug}`), bible redaction allowlist, windows computados server-side, ETag + Cache-Control + 304, R2 público (sin proxy), kill-switch + no-season handling. |
