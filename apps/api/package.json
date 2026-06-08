@@ -1,0 +1,14 @@
+{
+  "name": "@aiplottwist/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FastAPI backend for AI Plot Twist. Python sources live under app/. This package.json exists only so pnpm workspaces can route 'pnpm --filter ./apps/api <script>' calls into uv-based commands; it has no Node runtime deps.",
+  "scripts": {
+    "dev": "echo 'TODO (T-008): uv run uvicorn app.main:app --reload --port 8000'",
+    "test": "echo 'TODO (T-010): uv run pytest -q'",
+    "check": "echo 'TODO (T-005..T-013): uv run ruff check . && uv run mypy --strict app/'",
+    "format": "echo 'TODO (T-005): uv run ruff format .'",
+    "migrate": "echo 'TODO (T-009): uv run alembic upgrade head'",
+    "openapi:export": "echo 'TODO (T-013): uv run python scripts/export_openapi.py'"
+  }
+}
