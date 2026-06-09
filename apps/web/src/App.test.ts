@@ -1,44 +1,111 @@
 /**
- * Smoke test for the App component.
+ * Tests for the root App component — boot routing logic.
  *
- * Module 001 / Task T-017.
+ * Module 002 / Task T-022.
  *
- * Verifies that:
- *   1. App mounts without throwing.
- *   2. The documented placeholder strings are present in the rendered DOM.
- *
- * This is an intentionally thin test — it exists to confirm the component
- * tree renders and to gate CI from day one (Gate 8 — tests from day one).
- * Module 010 will add richer interaction tests as the UI grows.
+ * Mocks authStore so no real IndexedDB is touched.
+ * Uses the real router module (but resets state between tests via _resetRoute).
  */
-import { render, screen } from "@testing-library/svelte";
-import { describe, expect, it } from "vitest";
-import App from "./App.svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import App from './App.svelte';
+import { _resetRoute } from './lib/router.svelte';
 
-describe("App", () => {
-  it("mounts without throwing", () => {
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
+
+const { mockAuthStore } = vi.hoisted(() => {
+  const mockAuthStore = {
+    jwt: null as string | null,
+    user: null as { display_name: string } | null,
+    init: vi.fn<[], Promise<void>>().mockResolvedValue(undefined),
+    clear: vi.fn<[], Promise<void>>().mockResolvedValue(undefined),
+    setSession: vi.fn().mockResolvedValue(undefined),
+    updateJwt: vi.fn().mockResolvedValue(undefined),
+  };
+  return { mockAuthStore };
+});
+
+vi.mock('./lib/auth-store.svelte', () => ({ authStore: mockAuthStore }));
+
+// Prevent Onboarding from trying to call real fetch
+vi.mock('./lib/api', () => ({ apiFetch: vi.fn() }));
+
+// ---------------------------------------------------------------------------
+// Setup / teardown
+// ---------------------------------------------------------------------------
+
+beforeEach(() => {
+  _resetRoute();
+  mockAuthStore.jwt = null;
+  mockAuthStore.user = null;
+  mockAuthStore.init.mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('App boot routing', () => {
+  it('mounts without throwing', () => {
     expect(() => render(App)).not.toThrow();
   });
 
-  it("renders the app title", () => {
+  it('shows onboarding when no JWT is present', async () => {
+    mockAuthStore.jwt = null;
     render(App);
-    // The <h1> inside App.svelte must contain the project name.
-    expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("AI Plot Twist");
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/código de invitación/i)).toBeTruthy();
+    });
   });
 
-  it("renders the bootstrap tagline", () => {
+  it('shows today page when JWT is present', async () => {
+    mockAuthStore.jwt = 'existing.jwt.token';
     render(App);
-    // The documented placeholder string from spec FR-009 / plan.md.
-    const tagline = screen.getByText(/bootstrap OK/i);
-    expect(tagline).toBeTruthy();
+
+    await waitFor(() => {
+      expect(screen.getByText(/la historia está por comenzar/i)).toBeTruthy();
+    });
   });
 
-  it("renders a version string", () => {
+  it('navigates to /today when auth:navigate event is dispatched', async () => {
+    mockAuthStore.jwt = null;
     render(App);
-    // Version comes from apps/web/package.json via lib/version.ts.
-    // We just assert a version-shaped string (vX.Y.Z) is present.
-    const version = screen.getByText(/v\d+\.\d+\.\d+/);
-    expect(version).toBeTruthy();
+
+    // Wait for onboarding to appear first
+    await waitFor(() => {
+      expect(screen.getByLabelText(/código de invitación/i)).toBeTruthy();
+    });
+
+    // Simulate successful login dispatching the navigation event
+    window.dispatchEvent(
+      new CustomEvent('auth:navigate', { detail: { path: '/today' } }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/la historia está por comenzar/i)).toBeTruthy();
+    });
+  });
+
+  it('navigates to /onboarding when auth:logout event is dispatched', async () => {
+    mockAuthStore.jwt = 'existing.jwt.token';
+    render(App);
+
+    await waitFor(() => {
+      expect(screen.getByText(/la historia está por comenzar/i)).toBeTruthy();
+    });
+
+    window.dispatchEvent(new CustomEvent('auth:logout'));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/código de invitación/i)).toBeTruthy();
+    });
   });
 });
