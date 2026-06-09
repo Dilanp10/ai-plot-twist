@@ -9,6 +9,8 @@ GET  /api/v1/auth/me             (T-017)
 
 from __future__ import annotations
 
+import hashlib
+from base64 import urlsafe_b64decode as _b64d
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -19,13 +21,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.domain import display_name as dn
-from app.domain.device_secret import mint
+from app.domain.device_secret import mint, verify
 from app.domain.invites import InviteCode
 from app.domain.jwt_service import JWTService
 from app.errors import ProblemDetail
 from app.infra.invites_repo import InvitesRepo
 from app.infra.rate_limit_repo import RateLimited, RateLimitRepo
-from app.infra.users_repo import UsersRepo
+from app.infra.users_repo import UserRow, UsersRepo
+from app.middleware.jwt_auth import _user_cache, require_user
 from app.settings import get_settings
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -80,6 +83,19 @@ class MeResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _device_hash(raw_b64url: str) -> str | None:
+    """Compute SHA-256 hex of a base64url-encoded device secret for DB lookup.
+
+    Returns ``None`` if *raw_b64url* is not valid base64url.
+    """
+    try:
+        padding = "=" * (-len(raw_b64url) % 4)
+        raw = _b64d(raw_b64url + padding)
+        return hashlib.sha256(raw).hexdigest()
+    except Exception:
+        return None
 
 
 def _get_ip(request: Request) -> str:
@@ -193,4 +209,81 @@ async def redeem_invite(
         jwt=jwt_token,
         device_secret=raw_secret,
         jwt_expires_at=jwt_exp,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/auth/refresh  (T-016)
+# ---------------------------------------------------------------------------
+
+_401_INVALID = ProblemDetail(
+    status=401,
+    code="device_secret_invalid",
+    title="Credencial inválida",
+    detail="El device_secret no es válido o el usuario está suspendido.",
+)
+
+
+@router.post(
+    "/refresh",
+    status_code=200,
+    response_model=RefreshResponse,
+    operation_id="postAuthRefresh",
+)
+async def refresh_token(
+    body: RefreshRequest,
+    session: AsyncSession = Depends(get_session),
+) -> RefreshResponse:
+    """Issue a fresh JWT from a valid device_secret.
+
+    Banned users receive 401 (collapsed — same as invalid secret) to prevent
+    information leakage about account status.
+    """
+    settings = get_settings()
+
+    # Hash the raw secret for the DB lookup
+    hash_hex = _device_hash(body.device_secret)
+    if hash_hex is None:
+        raise _401_INVALID
+
+    user = await UsersRepo(session).get_by_device_token(hash_hex)
+    if user is None or user.is_banned:
+        raise _401_INVALID
+
+    # Constant-time verify (guard against timing attacks)
+    if not verify(body.device_secret, user.device_token):
+        raise _401_INVALID
+
+    jwt_token, jwt_exp = JWTService(settings.jwt_secret).issue(user.public_id)
+    return RefreshResponse(jwt=jwt_token, jwt_expires_at=jwt_exp)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/auth/me  (T-017)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/me",
+    status_code=200,
+    response_model=MeResponse,
+    operation_id="getAuthMe",
+)
+async def get_me(
+    user: UserRow = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+) -> MeResponse:
+    """Return the authenticated user.  Side-effect: updates ``last_seen_at``."""
+    now = datetime.now(UTC)
+    await UsersRepo(session).touch_last_seen(user.public_id)
+    await session.commit()
+    _user_cache.invalidate(user.public_id)  # evict stale entry
+
+    return MeResponse(
+        user=PublicUser(
+            public_id=user.public_id,
+            display_name=user.display_name,
+            created_at=user.created_at,
+            last_seen_at=now,
+        )
     )
