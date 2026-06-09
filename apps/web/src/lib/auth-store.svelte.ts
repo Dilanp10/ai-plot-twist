@@ -76,6 +76,18 @@ export const authStore = {
     _user = user;
   },
 
+  /**
+   * Update the stored JWT after a token refresh, keeping the device_secret
+   * unchanged.  Called by the API client interceptor.
+   */
+  async updateJwt(newJwt: string): Promise<void> {
+    const stored = await getAuth();
+    if (stored.deviceSecret) {
+      await setAuth({ jwt: newJwt, deviceSecret: stored.deviceSecret });
+    }
+    _jwt = newJwt;
+  },
+
   /** Clear all auth state and remove credentials from IndexedDB. */
   async clear(): Promise<void> {
     await clearAuth();
