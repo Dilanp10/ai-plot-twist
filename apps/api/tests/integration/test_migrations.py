@@ -205,6 +205,64 @@ async def test_0005_upgrade_then_downgrade() -> None:
     assert final["cycles"] and final["state_transitions"]
 
 
+# ---------------------------------------------------------------------------
+# Module 003 — T-003: system_flags (0006)
+# ---------------------------------------------------------------------------
+
+
+async def test_0006_upgrade_then_downgrade() -> None:
+    """Round-trip x2 for 0006: system_flags appears/disappears + kill_switch seed."""
+    from tests.conftest import _is_placeholder_database_url
+
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url or _is_placeholder_database_url(database_url):
+        pytest.skip("DATABASE_URL no apunta a una base real.")
+
+    cfg = _alembic_config(database_url)
+
+    for cycle_idx in range(2):
+        await asyncio.to_thread(command.upgrade, cfg, "head")
+
+        present = await _tables_exist(database_url, "system_flags")
+        assert present["system_flags"], (
+            f"ciclo {cycle_idx}: system_flags debería existir tras upgrade"
+        )
+
+        # Verify kill_switch seed row is present and off by default.
+        engine = create_async_engine(database_url)
+        try:
+            async with engine.connect() as conn:
+                row = await conn.execute(
+                    sa.text(
+                        "SELECT flag_value FROM system_flags "
+                        "WHERE flag_key = 'kill_switch'"
+                    )
+                )
+                value = row.scalar_one()
+                assert value is not None, (
+                    f"ciclo {cycle_idx}: kill_switch seed row missing"
+                )
+                # flag_value is a dict when returned from asyncpg JSONB
+                on_val = value.get("on") if isinstance(value, dict) else value["on"]
+                assert on_val is False, (
+                    f"ciclo {cycle_idx}: kill_switch.on debe ser false, got {on_val!r}"
+                )
+        finally:
+            await engine.dispose()
+
+        await asyncio.to_thread(command.downgrade, cfg, "base")
+
+        gone = await _tables_exist(database_url, "system_flags")
+        assert not gone["system_flags"], (
+            f"ciclo {cycle_idx}: system_flags debería estar borrada tras downgrade"
+        )
+
+    # Leave DB ready for subsequent tests.
+    await asyncio.to_thread(command.upgrade, cfg, "head")
+    final = await _tables_exist(database_url, "system_flags")
+    assert final["system_flags"]
+
+
 async def test_0005_uniq_st_trigger_enforced() -> None:
     """Inserting the same (cycle_id, to_state, trigger_id) twice raises IntegrityError.
 
