@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     # enforces the 503 at request time (app/middleware/hmac_tick.py).
     tick_secret: str | None = None
 
+    # ── Internal admin / alerting (optional — error at request time if absent) ─
+    # ADMIN_TOKEN: Bearer token checked by verify_admin_token (T-016).
+    # DISCORD_WEBHOOK_URL: Cycle alert target (T-013, T-014).
+    admin_token: str | None = None
+    discord_webhook_url: str | None = None
+
     # ── Cloudflare R2 (optional — safe to leave empty in dev) ───────────────
     r2_account_id: str | None = None
     r2_access_key_id: str | None = None
