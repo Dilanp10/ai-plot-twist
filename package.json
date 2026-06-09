@@ -25,7 +25,10 @@
     "db:up": "node scripts/check-docker.mjs && docker compose -f infra/docker-compose.dev.yml up -d postgres",
     "db:down": "docker compose -f infra/docker-compose.dev.yml down",
     "db:reset": "pnpm db:down && (docker volume rm aiplottwist_pgdata || true) && pnpm db:up && pnpm migrate",
-    "migrate": "pnpm --filter ./apps/api migrate"
+    "migrate": "pnpm --filter ./apps/api migrate",
+    "issue-invite": "pnpm --filter ./apps/api issue-invite --",
+    "revoke-invite": "pnpm --filter ./apps/api revoke-invite --",
+    "list-invites": "pnpm --filter ./apps/api list-invites --"
   },
   "devDependencies": {
     "concurrently": "^9.0.0",

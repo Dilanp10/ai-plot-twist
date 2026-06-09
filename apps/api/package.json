@@ -9,6 +9,9 @@
     "check": "uv run ruff check . && uv run mypy --strict app/",
     "format": "uv run ruff format .",
     "migrate": "uv run alembic upgrade head",
-    "openapi:export": "uv run python ../../scripts/export_openapi.py"
+    "openapi:export": "uv run python ../../scripts/export_openapi.py",
+    "issue-invite": "uv run python -m app.scripts.issue_invite",
+    "revoke-invite": "uv run python -m app.scripts.revoke_invite",
+    "list-invites": "uv run python -m app.scripts.list_invites"
   }
 }
