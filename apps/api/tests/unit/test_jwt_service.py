@@ -58,8 +58,10 @@ def test_issue_returns_future_expiry(svc: JWTService) -> None:
 def test_tampered_signature_returns_none(svc: JWTService) -> None:
     token, _ = svc.issue(uuid4())
     parts = token.split(".")
-    last_char = parts[2][-1]
-    parts[2] = parts[2][:-1] + ("A" if last_char != "A" else "B")
+    # Change the FIRST character of the signature (never a padding-only char,
+    # so the decoded bytes always differ → HMAC check always fails).
+    first_char = parts[2][0]
+    parts[2] = ("A" if first_char != "A" else "B") + parts[2][1:]
     tampered = ".".join(parts)
     assert svc.verify(tampered) is None
 
