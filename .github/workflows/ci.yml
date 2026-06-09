@@ -98,6 +98,81 @@ jobs:
         run: pnpm test:web
 
   # ──────────────────────────────────────────────────────────────────────────
+  # Web E2E — Playwright onboarding smoke (Chromium only)
+  # Runs after api + web unit checks pass. Needs both Python + Node.
+  # ──────────────────────────────────────────────────────────────────────────
+  web-e2e:
+    name: Web E2E — Playwright smoke
+    runs-on: ubuntu-latest
+    needs: [api, web]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: aiplottwist
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "apps/api/uv.lock"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install Python deps
+        working-directory: apps/api
+        run: uv sync --frozen
+
+      - name: Install Node deps
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install Playwright Chromium
+        working-directory: apps/web
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Apply DB migrations
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/aiplottwist
+        run: uv run alembic upgrade head
+
+      - name: Run Playwright E2E
+        working-directory: apps/web
+        env:
+          DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/aiplottwist
+          JWT_SECRET: ci-e2e-jwt-secret-minimum-32-chars!
+          TICK_SECRET: ci-e2e-tick-secret-placeholder
+          ENV: test
+        run: pnpm exec playwright test
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────────────────────
   # OpenAPI freshness — re-export the schema and assert no diff vs. committed
   # ──────────────────────────────────────────────────────────────────────────
   openapi-fresh:

@@ -31,5 +31,8 @@ export default defineConfig({
     // Run the @testing-library/svelte cleanup hook after each test so
     // mounted components don't leak across test cases.
     setupFiles: ["./src/test-setup.ts"],
+
+    // Exclude Playwright E2E specs — they run via `pnpm test:e2e`, not vitest.
+    exclude: ["**/e2e/**", "**/node_modules/**"],
   },
 });

@@ -75,12 +75,12 @@ pnpm issue-invite --count 5 --ttl-days 7
 
 ## 4. User redeems via PWA
 
-Open `http://localhost:5173/onboarding`. Enter:
+Open `http://localhost:5173/`. Enter:
 
 - Code: `K7M3-PQ2X` (auto-formatted as you type; lowercase accepted).
 - Display name: `Lucía`.
 
-Click "Empezar". Expected:
+Click "Ingresar". Expected:
 
 - Redirect to `/today` placeholder.
 - DevTools → Application → IndexedDB → `aiplottwist` → `auth` shows two keys:
@@ -200,13 +200,14 @@ Force-expire your JWT for testing:
 # Re-mint with a 30-second exp via a one-shot Python (dev only)
 uv run python -c "
 import jwt, time, uuid
-from app.settings import settings
+from app.settings import get_settings
+s = get_settings()
 print(jwt.encode({
   'sub': '9f3a3b5f-...-7e2c',
-  'iss': 'ai-plot-twist', 'aud': 'web',
+  'iss': 'ai-plot-twist', 'aud': 'aiplottwist',
   'iat': int(time.time()), 'exp': int(time.time()) + 30,
   'jti': str(uuid.uuid4()),
-}, settings.JWT_SECRET, algorithm='HS256'))
+}, s.jwt_secret, algorithm='HS256'))
 "
 ```
 
