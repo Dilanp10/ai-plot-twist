@@ -1,20 +1,12 @@
 name: tick-2355-watchdog
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Watchdog tick — verifies HMAC + liveness 5 min after the generation tick.
-# Does NOT mutate state; the stub returns 202 {accepted, noop:true} for WATCHDOG.
-# Module 003 will add a real no-op health-gate response.
-#
-# Cron schedule — DISABLED until module 003 implements the real FSM.
-# To enable: uncomment the `schedule:` block and open a PR.
-#
-# schedule:
-#   - cron: '55 2 * * *'  # 02:55 UTC = 23:55 ART (America/Argentina/Buenos_Aires, UTC-3, no DST)
-#
+# 02:55 UTC = 23:55 ART (UTC-3, no DST).
+# Watchdog: checks for stuck cycles and forces FAILED if needed.
 # Required GitHub secrets: API_URL, TICK_SECRET
-# ──────────────────────────────────────────────────────────────────────────────
 
 on:
+  schedule:
+    - cron: '55 2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -29,13 +21,15 @@ jobs:
         run: |
           ts=$(date -u +%s)
           body=$(jq -nc \
-            --arg to   "WATCHDOG" \
-            --argjson ts "$ts" \
-            --arg run  "$GITHUB_RUN_ID" \
-            '{to: $to, ts: $ts, trigger_id: $run}')
+            --arg     to             "WATCHDOG" \
+            --argjson ts             "$ts" \
+            --arg     run            "$GITHUB_RUN_ID" \
+            --argjson retry_attempt  "$GITHUB_RUN_ATTEMPT" \
+            '{to: $to, ts: $ts, trigger_id: $run, retry_attempt: $retry_attempt}')
           sig=$(printf '%s' "$body" | \
             openssl dgst -sha256 -hmac "$TICK_SECRET" -binary | base64)
           curl --fail --silent --show-error \
+            --retry 3 --retry-delay 10 \
             -X POST "${API_URL}/api/v1/internal/transition" \
             -H "Content-Type: application/json" \
             -H "X-Tick-Signature: ${sig}" \

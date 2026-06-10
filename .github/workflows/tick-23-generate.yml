@@ -1,17 +1,12 @@
 name: tick-23-generate
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Cron schedule — DISABLED until module 003 implements the real FSM.
-# To enable: uncomment the `schedule:` block and open a PR.
-#
-# schedule:
-#   - cron: '0 2 * * *'   # 02:00 UTC = 23:00 ART (America/Argentina/Buenos_Aires, UTC-3, no DST)
-#                          # Note: 23:00 ART is the NEXT calendar day in UTC.
-#
+# 02:00 UTC = 23:00 ART (UTC-3, no DST).
+# Note: 23:00 ART falls on the next UTC calendar day.
 # Required GitHub secrets: API_URL, TICK_SECRET
-# ──────────────────────────────────────────────────────────────────────────────
 
 on:
+  schedule:
+    - cron: '0 2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -26,13 +21,15 @@ jobs:
         run: |
           ts=$(date -u +%s)
           body=$(jq -nc \
-            --arg to   "GENERACION" \
-            --argjson ts "$ts" \
-            --arg run  "$GITHUB_RUN_ID" \
-            '{to: $to, ts: $ts, trigger_id: $run}')
+            --arg     to             "GENERACION" \
+            --argjson ts             "$ts" \
+            --arg     run            "$GITHUB_RUN_ID" \
+            --argjson retry_attempt  "$GITHUB_RUN_ATTEMPT" \
+            '{to: $to, ts: $ts, trigger_id: $run, retry_attempt: $retry_attempt}')
           sig=$(printf '%s' "$body" | \
             openssl dgst -sha256 -hmac "$TICK_SECRET" -binary | base64)
           curl --fail --silent --show-error \
+            --retry 3 --retry-delay 10 \
             -X POST "${API_URL}/api/v1/internal/transition" \
             -H "Content-Type: application/json" \
             -H "X-Tick-Signature: ${sig}" \
