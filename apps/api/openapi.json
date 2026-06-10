@@ -321,6 +321,72 @@
         "title": "SeasonBriefDTO",
         "type": "object"
       },
+      "SeasonFullDTO": {
+        "properties": {
+          "bible_public": {
+            "additionalProperties": true,
+            "title": "Bible Public",
+            "type": "object"
+          },
+          "chapter_count": {
+            "title": "Chapter Count",
+            "type": "integer"
+          },
+          "current_day_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Day Index"
+          },
+          "ended_on": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended On"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "started_on": {
+            "title": "Started On"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "bible_public",
+          "started_on",
+          "chapter_count",
+          "current_day_index"
+        ],
+        "title": "SeasonFullDTO",
+        "type": "object"
+      },
+      "SeasonResponseDTO": {
+        "properties": {
+          "season": {
+            "$ref": "#/components/schemas/SeasonFullDTO"
+          }
+        },
+        "required": [
+          "season"
+        ],
+        "title": "SeasonResponseDTO",
+        "type": "object"
+      },
       "TodayResponseDTO": {
         "properties": {
           "chapter": {
@@ -790,6 +856,49 @@
         "summary": "HMAC-signed FSM state-transition trigger",
         "tags": [
           "internal"
+        ]
+      }
+    },
+    "/api/v1/seasons/{slug}": {
+      "get": {
+        "description": "Resolve ``GET /seasons/{slug}`` per spec FR-005/FR-008.\n\nResponses:\n  * 200 — :class:`SeasonResponseDTO` with bible filtered to PUBLIC_BIBLE_KEYS.\n  * 503 — ``under_maintenance``.\n  * 404 — ``season_not_found``.",
+        "operationId": "getSeasonBySlug",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Season meta + public-safe bible + chapter counts",
+        "tags": [
+          "seasons"
         ]
       }
     },
