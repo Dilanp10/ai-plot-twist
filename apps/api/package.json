@@ -12,6 +12,7 @@
     "openapi:export": "uv run python ../../scripts/export_openapi.py",
     "issue-invite": "uv run python -m app.scripts.issue_invite",
     "revoke-invite": "uv run python -m app.scripts.revoke_invite",
-    "list-invites": "uv run python -m app.scripts.list_invites"
+    "list-invites": "uv run python -m app.scripts.list_invites",
+    "bootstrap-cycle": "uv run python -m app.scripts.bootstrap_cycle"
   }
 }

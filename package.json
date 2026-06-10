@@ -28,7 +28,8 @@
     "migrate": "pnpm --filter ./apps/api migrate",
     "issue-invite": "pnpm --filter ./apps/api issue-invite --",
     "revoke-invite": "pnpm --filter ./apps/api revoke-invite --",
-    "list-invites": "pnpm --filter ./apps/api list-invites --"
+    "list-invites": "pnpm --filter ./apps/api list-invites --",
+    "bootstrap-cycle": "pnpm --filter ./apps/api bootstrap-cycle --"
   },
   "devDependencies": {
     "concurrently": "^9.0.0",
