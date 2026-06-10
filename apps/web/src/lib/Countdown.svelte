@@ -19,22 +19,22 @@
     target: Date;
   }
 
-  const { label, target }: Props = $props();
+  const props: Props = $props();
 
-  let remaining = $state(formatRemaining(target));
+  let remaining = $state(formatRemaining(props.target));
 
   $effect(() => {
-    // Re-establish the timer when ``target`` changes (e.g. cycle advances).
-    remaining = formatRemaining(target);
+    // Re-establish the timer when ``props.target`` changes (e.g. cycle advances).
+    remaining = formatRemaining(props.target);
     const id = setInterval(() => {
-      remaining = formatRemaining(target);
+      remaining = formatRemaining(props.target);
     }, 1000);
     return () => clearInterval(id);
   });
 </script>
 
 <div class="countdown" role="timer" aria-live="polite">
-  <span class="label">{label}</span>
+  <span class="label">{props.label}</span>
   <span class="value">{remaining}</span>
 </div>
 
