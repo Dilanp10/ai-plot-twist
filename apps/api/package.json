@@ -13,6 +13,8 @@
     "issue-invite": "uv run python -m app.scripts.issue_invite",
     "revoke-invite": "uv run python -m app.scripts.revoke_invite",
     "list-invites": "uv run python -m app.scripts.list_invites",
-    "bootstrap-cycle": "uv run python -m app.scripts.bootstrap_cycle"
+    "bootstrap-cycle": "uv run python -m app.scripts.bootstrap_cycle",
+    "replay-tick": "uv run python -m app.scripts.replay_tick",
+    "kill-switch": "uv run python -m app.scripts.kill_switch"
   }
 }
