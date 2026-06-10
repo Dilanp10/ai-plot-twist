@@ -78,6 +78,11 @@ config swap, not a refactor.
 **Rationale**: Reduces cognitive load for non-Spanish contributors and keeps i18n a clean
 swap if the product ever expands.
 
+**Exception (ADR-0001)**: FSM state names (`PENDING_RELEASE`, `ESTRENO`,
+`RECEPCION_IDEAS`, `FILTERING`, `VOTACION`, `GENERACION`, `FAILED`) are Spanish
+domain terms of the ubiquitous language and are explicitly exempted from this gate.
+See `docs/adr/0001-spanish-fsm-state-names.md`.
+
 ## Gate 7 — Soft Delete on User Content
 
 - [ ] Are all user-authored entities (twists, votes, push subscriptions) deleted by
