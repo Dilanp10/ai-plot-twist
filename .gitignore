@@ -82,6 +82,9 @@ pnpm-debug.log*
 .wrangler/
 *.local
 
+# k6 load-test reports (scripts/k6/*.js writes to var/k6-report.json)
+var/
+
 # ─────────────────────────────────────────────────────────────
 # What is INTENTIONALLY tracked (do not add to this file):
 #   apps/api/.python-version      ← committed (pins Python 3.11 for uv)
