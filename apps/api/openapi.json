@@ -49,6 +49,22 @@
         "title": "ChapterDTO",
         "type": "object"
       },
+      "ChapterResponseDTO": {
+        "properties": {
+          "chapter": {
+            "$ref": "#/components/schemas/ChapterDTO"
+          },
+          "season": {
+            "$ref": "#/components/schemas/SeasonBriefDTO"
+          }
+        },
+        "required": [
+          "season",
+          "chapter"
+        ],
+        "title": "ChapterResponseDTO",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -570,6 +586,66 @@
           }
         },
         "summary": "Today's chapter + cycle state + window timestamps",
+        "tags": [
+          "chapters"
+        ]
+      }
+    },
+    "/api/v1/chapters/{public_id}": {
+      "get": {
+        "description": "Resolve ``GET /chapters/{public_id}`` per spec FR-004.\n\nResponses:\n  * 200 — :class:`ChapterResponseDTO` + ETag + Cache-Control.\n  * 304 — empty body when ``If-None-Match`` matches the ETag.\n  * 503 — ``under_maintenance``.\n  * 404 — ``chapter_not_found`` (unknown id OR pre-release status).",
+        "operationId": "getChapterById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Public Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read a specific chapter (live or archived) by its public id",
         "tags": [
           "chapters"
         ]

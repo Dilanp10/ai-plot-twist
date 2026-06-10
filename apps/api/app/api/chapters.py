@@ -1,15 +1,15 @@
-"""``GET /api/v1/chapters/today`` — today's chapter + cycle state + windows.
+"""``GET /api/v1/chapters/...`` — today's chapter + by-id chapter.
 
-Module 004 / Task T-007.
+Module 004 / Tasks T-007 (today) + T-008 (by public_id).
 
-Maps :class:`ContentService.today` results into HTTP responses per spec FR-001/
-FR-002 and RFC 7807 problem responses per research R-007. ``GET /chapters/
-{public_id}`` is added in T-008 to the same router.
+Maps :class:`ContentService` results into HTTP responses per spec FR-001/
+FR-002/FR-004 and RFC 7807 problem responses per research R-007.
 """
 
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi.responses import JSONResponse
@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.domain.content_service import (
+    ChapterNotFound,
+    ChapterResponseDTO,
     ContentService,
     KillSwitchActive,
     NoActiveSeason,
@@ -195,4 +197,106 @@ async def get_chapters_today(
     payload = JSONResponse(status_code=200, content=dto.model_dump(mode="json"))
     set_etag(payload, etag)
     set_cache(payload, max_age=60, swr=600, must_revalidate=True)
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/chapters/{public_id}
+# ---------------------------------------------------------------------------
+#
+# Cache policy decision — per spec FR-007 archived chapters get
+# ``max-age=86400, immutable`` while the live chapter gets
+# ``max-age=60, stale-while-revalidate=600``. ``ChapterResponseDTO`` does not
+# carry status today, so we apply the safer (shorter) policy unconditionally.
+# Bumping archived to ``immutable`` is a future optimisation — bottleneck not
+# proven yet, and the DTO change would ripple through 008/010.
+#
+# ETag uses the literal sentinel ``"BY_ID"`` for the state component instead of
+# the cycle state: a by-id read is **cycle-independent**, so coupling its ETag
+# to the cycle would needlessly invalidate clients every state change.
+
+
+@router.get(
+    "/{public_id}",
+    operation_id="getChapterById",
+    summary="Read a specific chapter (live or archived) by its public id",
+    response_model=ChapterResponseDTO,
+)
+async def get_chapter_by_id(
+    request: Request,
+    public_id: UUID,
+    if_none_match: str | None = Header(default=None, alias="If-None-Match"),
+    service: ContentService = Depends(get_content_service),
+) -> Response:
+    """Resolve ``GET /chapters/{public_id}`` per spec FR-004.
+
+    Responses:
+      * 200 — :class:`ChapterResponseDTO` + ETag + Cache-Control.
+      * 304 — empty body when ``If-None-Match`` matches the ETag.
+      * 503 — ``under_maintenance``.
+      * 404 — ``chapter_not_found`` (unknown id OR pre-release status).
+    """
+    try:
+        dto = await service.chapter(public_id)
+    except KillSwitchActive as exc:
+        _log.info(
+            "content_read",
+            endpoint="chapter",
+            status=503,
+            cache_hint="no-store",
+            code="under_maintenance",
+            chapter_id=str(public_id),
+        )
+        return _problem(
+            request=request,
+            status=503,
+            code="under_maintenance",
+            title="Service is under maintenance",
+            extra={"reason": exc.reason, "retry_after_seconds": _RETRY_AFTER_SECONDS},
+            cache_no_store=True,
+            retry_after=_RETRY_AFTER_SECONDS,
+        )
+    except ChapterNotFound:
+        _log.info(
+            "content_read",
+            endpoint="chapter",
+            status=404,
+            cache_hint="no-store",
+            code="chapter_not_found",
+            chapter_id=str(public_id),
+        )
+        return _problem(
+            request=request,
+            status=404,
+            code="chapter_not_found",
+            title="Chapter not found",
+            extra={"public_id": str(public_id)},
+            cache_no_store=True,
+        )
+
+    etag = derive_etag(dto.chapter.id, "BY_ID", dto.chapter.released_at)
+
+    if if_none_match is not None and _matches_etag(if_none_match, etag):
+        _log.info(
+            "content_read",
+            endpoint="chapter",
+            status=304,
+            cache_hint="hit",
+            chapter_id=str(public_id),
+        )
+        not_modified = Response(status_code=304)
+        set_etag(not_modified, etag)
+        set_cache(not_modified, max_age=60, swr=600)
+        return not_modified
+
+    _log.info(
+        "content_read",
+        endpoint="chapter",
+        status=200,
+        cache_hint="miss",
+        chapter_id=str(public_id),
+    )
+    payload = JSONResponse(status_code=200, content=dto.model_dump(mode="json"))
+    set_etag(payload, etag)
+    set_cache(payload, max_age=60, swr=600)
     return payload
