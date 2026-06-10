@@ -60,6 +60,7 @@ REQUIRED_OPERATION_IDS: frozenset[str] = frozenset(
     {
         "getHealth",  # specs/001-project-bootstrap/contracts/health.yaml
         "postInternalTransition",  # specs/001-project-bootstrap/contracts/health.yaml
+        "getChaptersToday",  # specs/004-chapters-content/contracts/chapters.yaml
     }
 )
 

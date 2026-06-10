@@ -1,6 +1,54 @@
 {
   "components": {
     "schemas": {
+      "ChapterDTO": {
+        "properties": {
+          "cliffhanger": {
+            "title": "Cliffhanger",
+            "type": "string"
+          },
+          "day_index": {
+            "title": "Day Index",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "panels": {
+            "items": {
+              "$ref": "#/components/schemas/PanelDTO"
+            },
+            "title": "Panels",
+            "type": "array"
+          },
+          "released_at": {
+            "format": "date-time",
+            "title": "Released At",
+            "type": "string"
+          },
+          "synopsis": {
+            "title": "Synopsis",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "day_index",
+          "title",
+          "synopsis",
+          "released_at",
+          "panels",
+          "cliffhanger"
+        ],
+        "title": "ChapterDTO",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -44,22 +92,251 @@
         "title": "HealthResponse",
         "type": "object"
       },
-      "TransitionAccepted": {
-        "description": "202 response body. ``noop`` becomes ``False`` in module 003.",
+      "KillSwitchPayload": {
         "properties": {
-          "noop": {
-            "default": true,
-            "title": "Noop",
+          "on": {
+            "title": "On",
             "type": "boolean"
           },
-          "status": {
-            "const": "accepted",
-            "default": "accepted",
-            "title": "Status",
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "title": "KillSwitchPayload",
+        "type": "object"
+      },
+      "MeResponse": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/PublicUser"
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "title": "MeResponse",
+        "type": "object"
+      },
+      "PanelDTO": {
+        "properties": {
+          "idx": {
+            "title": "Idx",
+            "type": "integer"
+          },
+          "image_blurhash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Blurhash"
+          },
+          "image_url": {
+            "title": "Image Url",
+            "type": "string"
+          },
+          "mood": {
+            "title": "Mood",
+            "type": "string"
+          },
+          "narration": {
+            "title": "Narration",
+            "type": "string"
+          },
+          "tts_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tts Url"
+          }
+        },
+        "required": [
+          "idx",
+          "image_url",
+          "narration",
+          "mood"
+        ],
+        "title": "PanelDTO",
+        "type": "object"
+      },
+      "PublicUser": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "public_id": {
+            "format": "uuid",
+            "title": "Public Id",
             "type": "string"
           }
         },
-        "title": "TransitionAccepted",
+        "required": [
+          "public_id",
+          "display_name",
+          "created_at",
+          "last_seen_at"
+        ],
+        "title": "PublicUser",
+        "type": "object"
+      },
+      "RedeemRequest": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "invite_code": {
+            "title": "Invite Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invite_code",
+          "display_name"
+        ],
+        "title": "RedeemRequest",
+        "type": "object"
+      },
+      "RedeemResponse": {
+        "properties": {
+          "device_secret": {
+            "title": "Device Secret",
+            "type": "string"
+          },
+          "jwt": {
+            "title": "Jwt",
+            "type": "string"
+          },
+          "jwt_expires_at": {
+            "format": "date-time",
+            "title": "Jwt Expires At",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/PublicUser"
+          }
+        },
+        "required": [
+          "user",
+          "jwt",
+          "device_secret",
+          "jwt_expires_at"
+        ],
+        "title": "RedeemResponse",
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "properties": {
+          "device_secret": {
+            "title": "Device Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_secret"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
+      "RefreshResponse": {
+        "properties": {
+          "jwt": {
+            "title": "Jwt",
+            "type": "string"
+          },
+          "jwt_expires_at": {
+            "format": "date-time",
+            "title": "Jwt Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jwt",
+          "jwt_expires_at"
+        ],
+        "title": "RefreshResponse",
+        "type": "object"
+      },
+      "SeasonBriefDTO": {
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title"
+        ],
+        "title": "SeasonBriefDTO",
+        "type": "object"
+      },
+      "TodayResponseDTO": {
+        "properties": {
+          "chapter": {
+            "$ref": "#/components/schemas/ChapterDTO"
+          },
+          "cycle_state": {
+            "enum": [
+              "PENDING_RELEASE",
+              "ESTRENO",
+              "RECEPCION_IDEAS",
+              "FILTERING",
+              "VOTACION",
+              "GENERACION",
+              "FAILED"
+            ],
+            "title": "Cycle State",
+            "type": "string"
+          },
+          "season": {
+            "$ref": "#/components/schemas/SeasonBriefDTO"
+          },
+          "windows": {
+            "$ref": "#/components/schemas/WindowsDTO"
+          }
+        },
+        "required": [
+          "cycle_state",
+          "season",
+          "chapter",
+          "windows"
+        ],
+        "title": "TodayResponseDTO",
         "type": "object"
       },
       "ValidationError": {
@@ -101,6 +378,38 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WindowsDTO": {
+        "properties": {
+          "next_release": {
+            "format": "date-time",
+            "title": "Next Release",
+            "type": "string"
+          },
+          "submit_until": {
+            "format": "date-time",
+            "title": "Submit Until",
+            "type": "string"
+          },
+          "vote_from": {
+            "format": "date-time",
+            "title": "Vote From",
+            "type": "string"
+          },
+          "vote_until": {
+            "format": "date-time",
+            "title": "Vote Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "submit_until",
+          "vote_from",
+          "vote_until",
+          "next_release"
+        ],
+        "title": "WindowsDTO",
+        "type": "object"
       }
     }
   },
@@ -110,11 +419,261 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/me": {
+      "get": {
+        "description": "Return the authenticated user.  Side-effect: updates ``last_seen_at``.",
+        "operationId": "getAuthMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/redeem-invite": {
+      "post": {
+        "description": "Redeem an invite code, create a user, and issue a JWT + device_secret.",
+        "operationId": "postAuthRedeemInvite",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedeemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redeem Invite",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "Issue a fresh JWT from a valid device_secret.\n\nBanned users receive 401 (collapsed — same as invalid secret) to prevent\ninformation leakage about account status.",
+        "operationId": "postAuthRefresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/chapters/today": {
+      "get": {
+        "description": "Resolve ``GET /chapters/today`` per spec FR-001/FR-002.\n\nResponses:\n  * 200 — :class:`TodayResponseDTO` + ETag + short-fresh + swr + must-revalidate.\n  * 304 — empty body, when ``If-None-Match`` matches the current ETag.\n  * 503 — ``under_maintenance`` (kill-switch on) or ``no_active_season``.\n  * 404 — ``no_live_chapter`` with ``first_release_at``.",
+        "operationId": "getChaptersToday",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Today's chapter + cycle state + window timestamps",
+        "tags": [
+          "chapters"
+        ]
+      }
+    },
+    "/api/v1/internal/health/cycle": {
+      "get": {
+        "description": "Return a point-in-time snapshot of the active cycle's FSM state.",
+        "operationId": "getInternalHealthCycle",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "FSM cycle health snapshot",
+        "tags": [
+          "internal"
+        ]
+      }
+    },
+    "/api/v1/internal/kill-switch": {
+      "post": {
+        "description": "Set the ``kill_switch`` system flag and return its new state.\n\nThe change is committed immediately; the in-process cache is invalidated\nso the next executor call reads the fresh DB value.",
+        "operationId": "postInternalKillSwitch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KillSwitchPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activate or deactivate the FSM kill-switch",
+        "tags": [
+          "internal"
+        ]
+      }
+    },
     "/api/v1/internal/transition": {
       "post": {
-        "description": "Validate semantic shape + replay-protect, then return a noop accept.\n\nOn replay (same ``trigger_id`` within this process), responds **409**\n``trigger_replayed`` per the contract.",
+        "description": "Validate semantic payload, dispatch to watchdog or FSM executor.\n\nCommits the DB session on success; the session is auto-rolled-back by the\nDI context manager if a domain exception escapes as a ``ProblemDetail``.",
         "operationId": "postInternalTransition",
         "parameters": [
+          {
+            "in": "header",
+            "name": "X-Dev-Skip-Dwell",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dev-Skip-Dwell"
+            }
+          },
           {
             "in": "header",
             "name": "X-Tick-Signature",
@@ -133,12 +692,10 @@
           }
         ],
         "responses": {
-          "202": {
+          "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransitionAccepted"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -154,7 +711,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "HMAC-signed FSM transition trigger (stub in module 001)",
+        "summary": "HMAC-signed FSM state-transition trigger",
         "tags": [
           "internal"
         ]
