@@ -29,6 +29,9 @@ dev = [
     # asyncpg ships no inline stubs; this package provides them for mypy strict
     "asyncpg-stubs",
     "types-pyyaml>=6.0.12.20260518",
+    # JSON Schema validation for module 004 T-010 contract test.
+    "jsonschema~=4.23",
+    "types-jsonschema",
 ]
 
 [tool.uv]
