@@ -6,7 +6,7 @@
  * Mocks authStore so no real IndexedDB is touched.
  * Uses the real router module (but resets state between tests via _resetRoute).
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.svelte';
 import { _resetRoute } from './lib/router.svelte';
@@ -19,8 +19,8 @@ const { mockAuthStore } = vi.hoisted(() => {
   const mockAuthStore = {
     jwt: null as string | null,
     user: null as { display_name: string } | null,
-    init: vi.fn<[], Promise<void>>().mockResolvedValue(undefined),
-    clear: vi.fn<[], Promise<void>>().mockResolvedValue(undefined),
+    init: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    clear: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     setSession: vi.fn().mockResolvedValue(undefined),
     updateJwt: vi.fn().mockResolvedValue(undefined),
   };
