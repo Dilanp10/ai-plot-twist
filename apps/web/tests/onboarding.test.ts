@@ -8,7 +8,7 @@
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import Onboarding from '../src/routes/onboarding.svelte';
 
 // ---------------------------------------------------------------------------
