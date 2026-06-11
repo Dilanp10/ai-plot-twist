@@ -206,6 +206,42 @@ async def test_0005_upgrade_then_downgrade() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Module 005 — T-001: twists (0007)
+# ---------------------------------------------------------------------------
+
+
+async def test_0007_upgrade_then_downgrade() -> None:
+    """Round-trip x2 for 0007: twists appears and disappears cleanly."""
+    from tests.conftest import _is_placeholder_database_url
+
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url or _is_placeholder_database_url(database_url):
+        pytest.skip("DATABASE_URL no apunta a una base real.")
+
+    cfg = _alembic_config(database_url)
+
+    for cycle_idx in range(2):
+        await asyncio.to_thread(command.upgrade, cfg, "head")
+
+        present = await _tables_exist(database_url, "twists")
+        assert present["twists"], (
+            f"ciclo {cycle_idx}: twists debería existir tras upgrade"
+        )
+
+        await asyncio.to_thread(command.downgrade, cfg, "base")
+
+        gone = await _tables_exist(database_url, "twists")
+        assert not gone["twists"], (
+            f"ciclo {cycle_idx}: twists debería estar borrada tras downgrade"
+        )
+
+    # Leave DB ready for subsequent tests.
+    await asyncio.to_thread(command.upgrade, cfg, "head")
+    final = await _tables_exist(database_url, "twists")
+    assert final["twists"]
+
+
+# ---------------------------------------------------------------------------
 # Module 003 — T-003: system_flags (0006)
 # ---------------------------------------------------------------------------
 
