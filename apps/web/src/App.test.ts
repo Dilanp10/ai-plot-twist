@@ -9,13 +9,14 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.svelte';
+import { chapterStore } from './lib/chapter-store.svelte';
 import { _resetRoute } from './lib/router.svelte';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-const { mockAuthStore } = vi.hoisted(() => {
+const { mockAuthStore, mockApiFetch } = vi.hoisted(() => {
   const mockAuthStore = {
     jwt: null as string | null,
     user: null as { display_name: string } | null,
@@ -24,13 +25,16 @@ const { mockAuthStore } = vi.hoisted(() => {
     setSession: vi.fn().mockResolvedValue(undefined),
     updateJwt: vi.fn().mockResolvedValue(undefined),
   };
-  return { mockAuthStore };
+  const mockApiFetch = vi.fn();
+  return { mockAuthStore, mockApiFetch };
 });
 
 vi.mock('./lib/auth-store.svelte', () => ({ authStore: mockAuthStore }));
 
-// Prevent Onboarding from trying to call real fetch
-vi.mock('./lib/api', () => ({ apiFetch: vi.fn() }));
+// Onboarding (submit) and chapter-store (today mount) both go through apiFetch.
+// Default to a benign no_active_season so the today route lands on the
+// "La historia todavía no empezó" empty-state — no TodayResponse fixture needed.
+vi.mock('./lib/api', () => ({ apiFetch: mockApiFetch }));
 
 // ---------------------------------------------------------------------------
 // Setup / teardown
@@ -38,9 +42,15 @@ vi.mock('./lib/api', () => ({ apiFetch: vi.fn() }));
 
 beforeEach(() => {
   _resetRoute();
+  chapterStore._reset();
   mockAuthStore.jwt = null;
   mockAuthStore.user = null;
   mockAuthStore.init.mockResolvedValue(undefined);
+  mockApiFetch.mockResolvedValue({
+    ok: false,
+    status: 503,
+    body: { code: 'no_active_season' },
+  });
 });
 
 afterEach(() => {
@@ -71,7 +81,7 @@ describe('App boot routing', () => {
     render(App);
 
     await waitFor(() => {
-      expect(screen.getByText(/la historia está por comenzar/i)).toBeTruthy();
+      expect(screen.getByText(/la historia todavía no empezó/i)).toBeTruthy();
     });
   });
 
@@ -90,7 +100,7 @@ describe('App boot routing', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/la historia está por comenzar/i)).toBeTruthy();
+      expect(screen.getByText(/la historia todavía no empezó/i)).toBeTruthy();
     });
   });
 
@@ -99,7 +109,7 @@ describe('App boot routing', () => {
     render(App);
 
     await waitFor(() => {
-      expect(screen.getByText(/la historia está por comenzar/i)).toBeTruthy();
+      expect(screen.getByText(/la historia todavía no empezó/i)).toBeTruthy();
     });
 
     window.dispatchEvent(new CustomEvent('auth:logout'));
