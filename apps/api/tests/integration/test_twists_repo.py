@@ -27,7 +27,7 @@ from app.infra.twists_repo import Twist, TwistsRepo
 API_DIR = Path(__file__).parent.parent.parent
 ALEMBIC_INI = API_DIR / "alembic.ini"
 
-_SLUG_PREFIX = "_tr-test-"
+_SLUG_PREFIX = "_twr-test-"
 _TODAY = date(2026, 6, 11)
 _INVITE_ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 
