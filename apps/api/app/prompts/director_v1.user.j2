@@ -1,0 +1,19 @@
+=== BIBLE DE LA TEMPORADA ===
+{{ season.bible_json | tojson }}
+
+=== ÚLTIMOS 3 CAPÍTULOS (synopsis) ===
+{% for c in last_chapters %}
+- Día {{ c.day_index }} — {{ c.title }}: {{ c.synopsis }}
+{% endfor %}
+
+=== CAPÍTULO ACTUAL (cliffhanger a resolver) ===
+Día {{ current.day_index }} — {{ current.title }}
+Synopsis: {{ current.synopsis }}
+Cliffhanger: {{ current.manifest_json.cliffhanger }}
+
+=== PROPUESTAS A CLASIFICAR ===
+{% for t in batch %}
+[{{ t.public_id }}] {{ t.content }}
+{% endfor %}
+
+Devolvé el JSON.
