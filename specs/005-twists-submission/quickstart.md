@@ -4,6 +4,25 @@
 **Depends on**: modules 001 + 002 + 003 + 004 merged. Cycle in `RECEPCION_IDEAS`,
 user redeemed an invite, JWT in hand.
 
+## Status (2026-06-12)
+
+| Phase | Status |
+|---|---|
+| 0 — migration 0007 | ✅ applied locally + ✅ applied to Neon (via Fly SSH) |
+| 1 — pure domain (twist_content, twist_quota) | ✅ done + tests green |
+| 2 — TwistsRepo + TwistLockBusy | ✅ done + integration tests green |
+| 3 — TwistSubmissionService (submit + delete + list_mine) | ✅ done + integration tests green |
+| 4 — HTTP endpoints (POST, DELETE, GET /me/twists) | ✅ code + integration tests green; **prod deploy pending re-deploy** |
+| 5 — race test | ✅ 2 tests green (10×concurrent → 3×201 + 7×409) |
+| 6 — PWA (twist-api, twist-store, TwistModal, MyTwistsPanel, today.svelte) | ✅ done + vitest green; **Pages deploy pending** |
+| 7 — SDD §5.5 patch + ADR-0002 | ✅ done |
+| 7 — T-016 deploy + smoke | ⏳ partial: migration 0007 applied to Neon; full re-deploy of API + Pages + E2E smoke deferred to post-ESTRENO (2026-06-13) |
+
+The smoke flow (§ below) can only be validated end-to-end once:
+1. The API is re-deployed with the Phase 4 endpoints (current prod image is from before T-007).
+2. The PWA is re-deployed to Cloudflare Pages with the Phase 6 components.
+3. The 2026-06-13 ESTRENO tick moves the bootstrap chapter to `status='live'`.
+
 ---
 
 ## 1. Apply the new migration
