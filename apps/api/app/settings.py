@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     r2_secret_access_key: str | None = None
     r2_bucket: str | None = None
 
+    # ── Module 005 (twists) ─────────────────────────────────────────────────
+    # Per FR-004: deleted twists count toward the quota too (anti-spam-then-
+    # delete). Override per-env via MAX_TWISTS_PER_USER_PER_CHAPTER.
+    max_twists_per_user_per_chapter: int = 3
+
     # ── Derived helpers ──────────────────────────────────────────────────────
 
     @property

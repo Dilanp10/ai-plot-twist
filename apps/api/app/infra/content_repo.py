@@ -41,6 +41,7 @@ class TodayPayload:
     cycle_state_entered_at: datetime
     cycle_date: date
 
+    chapter_id: int
     chapter_public_id: UUID
     chapter_day_index: int
     chapter_title: str
@@ -99,6 +100,7 @@ SELECT
   c.state            AS cycle_state,
   c.state_entered_at,
   c.cycle_date,
+  ch.id              AS chapter_id,
   ch.public_id       AS chapter_public_id,
   ch.day_index       AS chapter_day_index,
   ch.title           AS chapter_title,
@@ -167,6 +169,7 @@ def _map_today(row: Any) -> TodayPayload:
         cycle_state=str(row["cycle_state"]),
         cycle_state_entered_at=row["state_entered_at"],
         cycle_date=row["cycle_date"],
+        chapter_id=int(row["chapter_id"]),
         chapter_public_id=row["chapter_public_id"],
         chapter_day_index=int(row["chapter_day_index"]),
         chapter_title=str(row["chapter_title"]),
