@@ -51,12 +51,17 @@ from app.infra.system_flags_repo import SystemFlagsRepo
 from app.infra.twists_repo import Twist, TwistLockBusy, TwistsRepo
 
 __all__ = [
+    "AlreadyFiltered",
     "ChapterMismatch",
+    "DeleteResult",
+    "ForbiddenNotOwner",
     "IdempotencyConflict",
     "KillSwitchActive",
+    "ListMineResult",
     "OverQuota",
     "SubmitResult",
     "TwistLockBusy",
+    "TwistNotFound",
     "TwistSubmissionService",
     "WindowClosed",
 ]
@@ -102,6 +107,30 @@ class IdempotencyConflict(Exception):
     """
 
 
+class TwistNotFound(Exception):
+    """No twist exists with the given ``public_id``.
+
+    Mapped to 404 ``twist_not_found``.
+    """
+
+
+class ForbiddenNotOwner(Exception):
+    """The twist exists but belongs to another user.
+
+    Mapped to 403 ``forbidden_not_owner`` (R-006: 403 not 404 — UUIDv4
+    public_ids are not enumerable, so honesty wins over obscurity).
+    """
+
+
+class AlreadyFiltered(Exception):
+    """The twist has already been processed by the director filter.
+
+    Status moved past ``pending_review``/``deleted_by_user`` (i.e. it is
+    now ``approved`` or ``rejected_*``), so it is immutable. Mapped to
+    409 ``already_filtered``.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Result
 # ---------------------------------------------------------------------------
@@ -126,6 +155,46 @@ class SubmitResult:
     twist: Twist
     quota: QuotaState
     was_replay: bool
+
+
+@dataclass(frozen=True)
+class DeleteResult:
+    """Outcome of a ``delete()`` call.
+
+    Attributes
+    ----------
+    deleted_at:
+        The persisted soft-delete timestamp. On idempotent replay, this
+        is the original timestamp from the first delete (not now()).
+    quota:
+        Post-delete quota snapshot. ``used`` is unchanged from before the
+        delete since FR-004 says deletes do NOT free quota.
+    was_idempotent:
+        ``True`` when the twist was already ``deleted_by_user`` before
+        this call. The HTTP layer can still return 200 either way.
+    """
+
+    deleted_at: datetime
+    quota: QuotaState
+    was_idempotent: bool
+
+
+@dataclass(frozen=True)
+class ListMineResult:
+    """Outcome of a ``list_mine()`` call.
+
+    Attributes
+    ----------
+    items:
+        The user's twists for the currently live chapter, ordered by
+        ``submitted_at`` ASC. Includes ``deleted_by_user`` rows so the
+        ``/me/twists`` UI can show the full history.
+    quota:
+        Snapshot derived from the list length (used = len(items)).
+    """
+
+    items: list[Twist]
+    quota: QuotaState
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +350,144 @@ class TwistSubmissionService:
             twist=twist,
             quota=QuotaState(used=used + 1, max=self._max),
             was_replay=False,
+        )
+
+    # -----------------------------------------------------------------------
+    # Public entry points — delete + list_mine
+    # -----------------------------------------------------------------------
+
+    async def delete(
+        self,
+        user_id: int,
+        twist_public_id: UUID,
+    ) -> DeleteResult:
+        """Soft-delete a pending twist.
+
+        Idempotent: re-delete of an already-deleted twist returns the
+        original ``deleted_at``. Per FR-004, the user's quota is NOT
+        freed.
+
+        Raises
+        ------
+        KillSwitchActive
+        WindowClosed
+            No active season / no live chapter / cycle not in
+            ``RECEPCION_IDEAS`` / ``now >= submit_until``.
+        TwistNotFound
+            ``twist_public_id`` is unknown.
+        ForbiddenNotOwner
+            The twist belongs to another user.
+        AlreadyFiltered
+            Status moved past ``pending_review``/``deleted_by_user`` —
+            the director filter already processed it.
+        """
+        async with self._session_factory() as session, session.begin():
+            flags_repo = SystemFlagsRepo(session)
+            content_repo = ContentRepo(session)
+            twists_repo = TwistsRepo(session)
+
+            # 1. Kill-switch.
+            await self._ensure_not_killed(flags_repo)
+
+            # 2. Window gate: same rules as submit (RECEPCION_IDEAS + deadline).
+            payload = await content_repo.get_today_payload()
+            if payload is None or payload.chapter_status != "live":
+                raise WindowClosed
+            windows = compute_windows(
+                cycle_state=payload.cycle_state,
+                state_entered_at=payload.cycle_state_entered_at,
+                cycle_date=payload.cycle_date,
+                now_utc=self._now(),
+                cycle_times=self._cycle_times,
+            )
+            if (
+                payload.cycle_state != "RECEPCION_IDEAS"
+                or self._now() >= windows.submit_until
+            ):
+                raise WindowClosed
+
+            # 3. Lock the twist row (PK index → cheap).
+            twist = await twists_repo.get_by_public_id_for_update(
+                twist_public_id
+            )
+            if twist is None:
+                raise TwistNotFound
+            if twist.user_id != user_id:
+                raise ForbiddenNotOwner
+
+            # 4. Status gate.
+            if twist.status not in ("pending_review", "deleted_by_user"):
+                raise AlreadyFiltered
+
+            # 5. Idempotency: re-delete is a no-op returning original timestamp.
+            if twist.status == "deleted_by_user":
+                assert twist.deleted_at is not None, (
+                    "ck_twists_deleted_consistency invariant violated"
+                )
+                used = await twists_repo.count_for_user_chapter(
+                    user_id, twist.chapter_id
+                )
+                return DeleteResult(
+                    deleted_at=twist.deleted_at,
+                    quota=QuotaState(used=used, max=self._max),
+                    was_idempotent=True,
+                )
+
+            # 6. Soft delete.
+            deleted_at = await twists_repo.soft_delete(twist.id)
+
+            # 7. Recompute quota for the response. Delete does NOT free
+            # (FR-004), so `used` stays the same.
+            used = await twists_repo.count_for_user_chapter(
+                user_id, twist.chapter_id
+            )
+
+        return DeleteResult(
+            deleted_at=deleted_at,
+            quota=QuotaState(used=used, max=self._max),
+            was_idempotent=False,
+        )
+
+    async def list_mine(self, user_id: int) -> ListMineResult:
+        """Return the user's twists for the currently live chapter.
+
+        Includes ``deleted_by_user`` rows so the PWA can show the full
+        history. Items are ordered by ``submitted_at`` ASC.
+
+        If there is no active season or no live chapter, returns an
+        empty list with ``quota=QuotaState(used=0, max=...)`` rather
+        than raising — a benign read should not penalize the client.
+
+        Raises
+        ------
+        KillSwitchActive
+        """
+        async with self._session_factory() as session:
+            flags_repo = SystemFlagsRepo(session)
+            content_repo = ContentRepo(session)
+            twists_repo = TwistsRepo(session)
+
+            await self._ensure_not_killed(flags_repo)
+
+            payload = await content_repo.get_today_payload()
+            if payload is None or payload.chapter_status != "live":
+                return ListMineResult(
+                    items=[],
+                    quota=QuotaState(used=0, max=self._max),
+                )
+
+            # `limit = max + 1` is defensive: under the advisory lock we
+            # should never exceed `max` rows, but if a bug ever lets us
+            # over-quota, surface it instead of silently truncating.
+            items = await twists_repo.list_for_user_chapter(
+                user_id=user_id,
+                chapter_id=payload.chapter_id,
+                limit=self._max + 1,
+            )
+
+        return ListMineResult(
+            items=items,
+            quota=QuotaState(used=len(items), max=self._max),
         )
 
     # -----------------------------------------------------------------------
