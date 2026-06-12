@@ -19,10 +19,19 @@
   import { chapterStore, type CycleState } from '../lib/chapter-store.svelte';
   import { windowFor } from '../lib/window-countdown';
   import Countdown from '../lib/Countdown.svelte';
+  import TwistModal from '../lib/components/TwistModal.svelte';
+  import MyTwistsPanel from '../lib/components/MyTwistsPanel.svelte';
+
+  let modalOpen = $state(false);
 
   onMount(() => {
     void chapterStore.load();
   });
+
+  function isSubmitWindowOpen(submitUntilIso: string): boolean {
+     
+    return Date.now() < new Date(submitUntilIso).getTime();
+  }
 
   function ctaForState(state: CycleState): string | null {
     switch (state) {
@@ -105,12 +114,35 @@
     </div>
 
     {@const ctaLabel = ctaForState(dto.cycle_state)}
+    {@const submitOpen = isSubmitWindowOpen(dto.windows.submit_until)}
+    {@const canSubmitNow = dto.cycle_state === 'RECEPCION_IDEAS' && submitOpen}
     {#if ctaLabel}
-      <button class="cta" type="button" disabled aria-disabled="true" data-testid="cta">
-        {ctaLabel}
-        <small>(próximamente)</small>
-      </button>
+      {#if canSubmitNow}
+        <button
+          class="cta"
+          type="button"
+          onclick={() => (modalOpen = true)}
+          data-testid="cta"
+        >
+          {ctaLabel}
+        </button>
+      {:else}
+        <button class="cta" type="button" disabled aria-disabled="true" data-testid="cta">
+          {ctaLabel}
+          <small>(próximamente)</small>
+        </button>
+      {/if}
     {/if}
+
+    <div class="my-twists">
+      <MyTwistsPanel canDelete={canSubmitNow} />
+    </div>
+
+    <TwistModal
+      open={modalOpen}
+      chapterId={dto.chapter.id}
+      onClose={() => (modalOpen = false)}
+    />
   {:else if chapterStore.status === 'maintenance'}
     <section class="banner maintenance" data-testid="maintenance">
       <h2>En mantenimiento</h2>
@@ -134,7 +166,7 @@
     <section class="banner error" data-testid="error">
       <h2>Algo salió mal</h2>
       <p>No pudimos cargar el capítulo. Probá de nuevo en un momento.</p>
-      <button type="button" on:click={() => void chapterStore.load()}>Reintentar</button>
+      <button type="button" onclick={() => void chapterStore.load()}>Reintentar</button>
     </section>
   {/if}
 </main>
@@ -240,6 +272,15 @@
     font-size: 0.8rem;
     opacity: 0.7;
     margin-top: 0.25rem;
+  }
+
+  .cta:not(:disabled) {
+    cursor: pointer;
+    opacity: 1;
+  }
+
+  .my-twists {
+    margin-top: 1.5rem;
   }
 
   .banner {
