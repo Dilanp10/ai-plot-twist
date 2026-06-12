@@ -158,7 +158,7 @@ class TransitionsRepo:
             sa.text(
                 f"SELECT {_SELECT_COLS} FROM state_transitions "
                 "WHERE cycle_id = :cycle_id "
-                "ORDER BY created_at DESC "
+                "ORDER BY created_at DESC, id DESC "
                 "LIMIT :limit"
             ),
             {"cycle_id": cycle_id, "limit": limit},

@@ -4,7 +4,7 @@ Module 003 / Task T-010.
 
 Skips when DATABASE_URL is the conftest placeholder (no real DB available).
 Each test creates its own season + chapter + cycle and deletes them in
-finally blocks via CASCADE.
+finally blocks in FK-safe order (cycles → seasons).
 
 Key assertion: ON CONFLICT DO NOTHING idempotency — inserting the same
 (cycle_id, to_state, trigger_id) twice returns None the second time.
@@ -109,14 +109,24 @@ async def _make_cycle(session: AsyncSession, suffix: str) -> int:
 
 
 async def _cleanup_by_cycle(session: AsyncSession, cycle_id: int) -> None:
-    """Delete the season whose cycle this is (cascades everything)."""
-    await session.execute(
-        sa.text(
-            "DELETE FROM seasons WHERE id = ("
-            "  SELECT season_id FROM cycles WHERE id = :cid"
-            ")"
-        ),
+    """Delete the cycle's season + descendants in FK-safe order.
+
+    cycles.season_id has no ON DELETE CASCADE, so seasons cannot be deleted
+    while any cycle still references them.  Order: delete cycles first
+    (cascades state_transitions), then seasons (cascades chapters).
+    """
+    row = await session.execute(
+        sa.text("SELECT season_id FROM cycles WHERE id = :cid"),
         {"cid": cycle_id},
+    )
+    season_id = row.scalar_one()
+    await session.execute(
+        sa.text("DELETE FROM cycles WHERE season_id = :sid"),
+        {"sid": season_id},
+    )
+    await session.execute(
+        sa.text("DELETE FROM seasons WHERE id = :sid"),
+        {"sid": season_id},
     )
     await session.commit()
 
