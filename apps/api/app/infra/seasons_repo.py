@@ -90,7 +90,7 @@ class SeasonsRepo:
         result = await self._s.execute(
             sa.text(
                 "INSERT INTO seasons (slug, title, bible_json, started_on) "
-                "VALUES (:slug, :title, :bible_json::jsonb, :started_on) "
+                "VALUES (:slug, :title, cast(:bible_json AS jsonb), :started_on) "
                 f"RETURNING {_SELECT_COLS}"
             ),
             {

@@ -108,7 +108,7 @@ class ChaptersRepo:
                 "(season_id, day_index, title, synopsis, manifest_json, status) "
                 "VALUES "
                 "(:season_id, :day_index, :title, :synopsis, "
-                ":manifest_json::jsonb, :status) "
+                "cast(:manifest_json AS jsonb), :status) "
                 f"RETURNING {_SELECT_COLS}"
             ),
             {

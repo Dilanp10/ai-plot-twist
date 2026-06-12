@@ -126,7 +126,7 @@ class TransitionsRepo:
                 f"(cycle_id, from_state, to_state, triggered_by, "
                 f" trigger_id, payload_json) "
                 f"VALUES (:cycle_id, :from_state, :to_state, :triggered_by, "
-                f"        :trigger_id, :payload_json::jsonb) "
+                f"        :trigger_id, cast(:payload_json AS jsonb)) "
                 f"ON CONFLICT (cycle_id, to_state, trigger_id) "
                 f"WHERE trigger_id IS NOT NULL DO NOTHING "
                 f"RETURNING {_SELECT_COLS}"

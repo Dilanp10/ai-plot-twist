@@ -144,7 +144,7 @@ class SystemFlagsRepo:
         result = await self._s.execute(
             sa.text(
                 "INSERT INTO system_flags (flag_key, flag_value, updated_by) "
-                "VALUES (:key, :value::jsonb, :updated_by) "
+                "VALUES (:key, cast(:value AS jsonb), :updated_by) "
                 "ON CONFLICT (flag_key) DO UPDATE SET "
                 "    flag_value = EXCLUDED.flag_value, "
                 "    updated_by = EXCLUDED.updated_by, "
