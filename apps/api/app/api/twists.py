@@ -1,0 +1,375 @@
+"""``POST /api/v1/twists/submit`` — submit a continuation proposal.
+
+Module 005 / Task T-007.
+
+Authenticated endpoint that wraps :class:`TwistSubmissionService.submit`.
+Validates the ``Idempotency-Key`` header, hashes the raw request body,
+calls the service, and maps domain exceptions to RFC 7807 problem
+responses per the contract in ``specs/005-twists-submission/contracts/
+twists.yaml``.
+
+HTTP status semantics:
+  * 201 — fresh insert (``was_replay=False``)
+  * 200 — idempotent replay (``was_replay=True``)
+  * 422 — missing/invalid Idempotency-Key, or content out of bounds
+  * 401 — missing/invalid JWT (raised by ``require_user``)
+  * 403 — banned user (raised by ``require_user``)
+  * 409 — window_closed | chapter_mismatch | over_quota | idempotency_conflict
+  * 503 — under_maintenance | lock_busy
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Header, Request
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.db import get_session_factory
+from app.domain.twist_submission import (
+    ChapterMismatch,
+    IdempotencyConflict,
+    KillSwitchActive,
+    OverQuota,
+    TwistLockBusy,
+    TwistSubmissionService,
+    WindowClosed,
+)
+from app.domain.windows import CycleTimes
+from app.infra.users_repo import UserRow
+from app.logging import get_logger
+from app.middleware.jwt_auth import require_user
+from app.settings import Settings, get_settings
+
+_log = get_logger(__name__)
+
+router = APIRouter(prefix="/api/v1/twists", tags=["twists"])
+
+_PROBLEM_MEDIA = "application/problem+json"
+_RETRY_AFTER_SECONDS = 3600
+
+
+# ---------------------------------------------------------------------------
+# DI helpers
+# ---------------------------------------------------------------------------
+
+
+def get_twist_submission_service(
+    factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    settings: Settings = Depends(get_settings),
+) -> TwistSubmissionService:
+    """Build a :class:`TwistSubmissionService` per request."""
+    return TwistSubmissionService(
+        session_factory=factory,
+        cycle_times=CycleTimes.default(),
+        max_per_chapter=settings.max_twists_per_user_per_chapter,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DTOs
+# ---------------------------------------------------------------------------
+
+
+class _Frozen(BaseModel):
+    """Common config: immutable DTOs."""
+
+    model_config = ConfigDict(frozen=True)
+
+
+class SubmitRequest(_Frozen):
+    """Request body for ``POST /twists/submit``.
+
+    ``content`` is validated by the domain normalizer (5..280 chars after
+    NFKC + Cc/Cf/Co/Cs stripping + trim). The handler raises 422 on
+    out-of-bounds values.
+    """
+
+    chapter_id: UUID
+    content: str
+
+
+class TwistMineDTO(_Frozen):
+    """Public projection of a user's own twist row."""
+
+    public_id: UUID
+    content: str
+    status: str
+    director_reason: str | None = None
+    submitted_at: str  # ISO 8601 UTC
+    deleted_at: str | None = None
+
+
+class SubmitResponseDTO(_Frozen):
+    """``201``/``200`` response shape for ``POST /twists/submit``."""
+
+    twist: TwistMineDTO
+    remaining_submissions: int
+
+
+# ---------------------------------------------------------------------------
+# Problem helper (RFC 7807, local copy of the chapters.py pattern)
+# ---------------------------------------------------------------------------
+
+
+def _problem(
+    *,
+    request: Request,
+    status: int,
+    code: str,
+    title: str,
+    extra: dict[str, Any] | None = None,
+    retry_after: int | None = None,
+) -> JSONResponse:
+    body: dict[str, Any] = {
+        "type": "about:blank",
+        "title": title,
+        "status": status,
+        "code": code,
+        "instance": str(request.url.path),
+    }
+    if extra:
+        body.update(extra)
+    headers: dict[str, str] = {}
+    if retry_after is not None:
+        headers["Retry-After"] = str(retry_after)
+    return JSONResponse(
+        status_code=status,
+        content=body,
+        media_type=_PROBLEM_MEDIA,
+        headers=headers,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Body hash (raw — pre-normalization)
+# ---------------------------------------------------------------------------
+
+
+def _hash_request_body(body: SubmitRequest) -> str:
+    """SHA-256 of the canonical JSON dump of the raw request body.
+
+    Computed on the **raw** content (before NFKC normalization) so the
+    idempotency key is deterministic from what the client actually sent.
+    Different whitespace/zero-width chars → different hash → not an
+    idempotency replay.
+    """
+    canonical = json.dumps(
+        {"chapter_id": str(body.chapter_id), "content": body.content},
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _twist_to_dto(twist: Any) -> TwistMineDTO:
+    return TwistMineDTO(
+        public_id=twist.public_id,
+        content=twist.content,
+        status=twist.status,
+        director_reason=twist.director_reason,
+        submitted_at=twist.submitted_at.isoformat(),
+        deleted_at=twist.deleted_at.isoformat() if twist.deleted_at else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/twists/submit
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/submit",
+    operation_id="postTwistsSubmit",
+    summary="Submit a continuation proposal for the current live chapter",
+)
+async def post_twists_submit(
+    request: Request,
+    body: SubmitRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: UserRow = Depends(require_user),
+    service: TwistSubmissionService = Depends(get_twist_submission_service),
+) -> Response:
+    """Submit a twist for the currently live chapter.
+
+    The handler delegates validation (kill-switch, window, chapter match,
+    quota, idempotency) to :class:`TwistSubmissionService.submit` and
+    maps each domain exception to the contracted problem response.
+    """
+    # 1. Idempotency-Key required (FR-001, research R-002).
+    if not idempotency_key:
+        _log.info(
+            "twist_submit",
+            outcome="error",
+            user_id=int(user.id),
+            code="missing_idempotency_key",
+            status=422,
+        )
+        return _problem(
+            request=request,
+            status=422,
+            code="missing_idempotency_key",
+            title="Idempotency-Key header is required",
+        )
+    try:
+        UUID(idempotency_key)
+    except ValueError:
+        _log.info(
+            "twist_submit",
+            outcome="error",
+            user_id=int(user.id),
+            code="invalid_idempotency_key",
+            status=422,
+        )
+        return _problem(
+            request=request,
+            status=422,
+            code="invalid_idempotency_key",
+            title="Idempotency-Key must be a UUID",
+        )
+
+    body_hash = _hash_request_body(body)
+
+    # 2. Call service.
+    try:
+        result = await service.submit(
+            user_id=int(user.id),
+            chapter_public_id=body.chapter_id,
+            content=body.content,
+            idempotency_key=idempotency_key,
+            idempotency_body_hash=body_hash,
+        )
+    except KillSwitchActive as exc:
+        _log.info(
+            "twist_submit",
+            outcome="error",
+            user_id=int(user.id),
+            code="under_maintenance",
+            status=503,
+        )
+        return _problem(
+            request=request,
+            status=503,
+            code="under_maintenance",
+            title="Service is under maintenance",
+            extra={
+                "reason": exc.reason,
+                "retry_after_seconds": _RETRY_AFTER_SECONDS,
+            },
+            retry_after=_RETRY_AFTER_SECONDS,
+        )
+    except WindowClosed:
+        _log.info(
+            "twist_submit",
+            outcome="error",
+            user_id=int(user.id),
+            code="window_closed",
+            status=409,
+        )
+        return _problem(
+            request=request,
+            status=409,
+            code="window_closed",
+            title="Submit window is closed",
+        )
+    except ChapterMismatch:
+        _log.info(
+            "twist_submit",
+            outcome="error",
+            user_id=int(user.id),
+            code="chapter_mismatch",
+            status=409,
+        )
+        return _problem(
+            request=request,
+            status=409,
+            code="chapter_mismatch",
+            title="chapter_id is not the currently live chapter",
+        )
+    except OverQuota as exc:
+        _log.info(
+            "twist_submit",
+            outcome="error",
+            user_id=int(user.id),
+            code="over_quota",
+            status=409,
+            quota_used=exc.used,
+        )
+        return _problem(
+            request=request,
+            status=409,
+            code="over_quota",
+            title="Twist quota exhausted for this chapter",
+            extra={"quota_used": exc.used, "quota_max": exc.max},
+        )
+    except IdempotencyConflict:
+        _log.info(
+            "twist_submit",
+            outcome="error",
+            user_id=int(user.id),
+            code="idempotency_conflict",
+            status=409,
+        )
+        return _problem(
+            request=request,
+            status=409,
+            code="idempotency_conflict",
+            title="Idempotency-Key was reused with a different request body",
+        )
+    except TwistLockBusy:
+        _log.info(
+            "twist_submit",
+            outcome="error",
+            user_id=int(user.id),
+            code="lock_busy",
+            status=503,
+        )
+        return _problem(
+            request=request,
+            status=503,
+            code="lock_busy",
+            title="Concurrent submit in progress; retry shortly",
+            retry_after=1,
+        )
+    except ValueError as exc:
+        # twist_content.normalize raises ValueError on out-of-bounds.
+        _log.info(
+            "twist_submit",
+            outcome="error",
+            user_id=int(user.id),
+            code="invalid_content",
+            status=422,
+        )
+        return _problem(
+            request=request,
+            status=422,
+            code="invalid_content",
+            title="Content is too short or too long",
+            extra={"message": str(exc)},
+        )
+
+    # 3. Build success response.
+    dto = SubmitResponseDTO(
+        twist=_twist_to_dto(result.twist),
+        remaining_submissions=result.quota.remaining,
+    )
+    status_code = 200 if result.was_replay else 201
+    _log.info(
+        "twist_submit",
+        outcome="ok",
+        user_id=int(user.id),
+        twist_id=str(result.twist.public_id),
+        chapter_id=str(result.twist.chapter_id),
+        was_replay=result.was_replay,
+        status=status_code,
+        remaining_submissions=result.quota.remaining,
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content=dto.model_dump(mode="json"),
+    )

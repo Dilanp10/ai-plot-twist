@@ -30,6 +30,7 @@ from app.api.internal_health_cycle import router as internal_health_cycle_router
 from app.api.internal_kill_switch import router as internal_kill_switch_router
 from app.api.internal_transition import router as internal_transition_router
 from app.api.seasons import router as seasons_router
+from app.api.twists import router as twists_router
 from app.db import dispose_engine
 from app.errors import ProblemDetail, problem_handler
 from app.logging import configure_logging, get_logger
@@ -112,6 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(chapters_router)
     app.include_router(seasons_router)
+    app.include_router(twists_router)
 
     return app
 
