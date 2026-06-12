@@ -32,11 +32,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db import get_session_factory
 from app.domain.twist_submission import (
+    AlreadyFiltered,
     ChapterMismatch,
+    ForbiddenNotOwner,
     IdempotencyConflict,
     KillSwitchActive,
     OverQuota,
     TwistLockBusy,
+    TwistNotFound,
     TwistSubmissionService,
     WindowClosed,
 )
@@ -109,6 +112,14 @@ class SubmitResponseDTO(_Frozen):
     """``201``/``200`` response shape for ``POST /twists/submit``."""
 
     twist: TwistMineDTO
+    remaining_submissions: int
+
+
+class DeleteResponseDTO(_Frozen):
+    """``200`` response shape for ``DELETE /twists/{public_id}``."""
+
+    twist_id: UUID
+    deleted_at: str  # ISO 8601 UTC
     remaining_submissions: int
 
 
@@ -371,5 +382,132 @@ async def post_twists_submit(
     )
     return JSONResponse(
         status_code=status_code,
+        content=dto.model_dump(mode="json"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/twists/{public_id}
+# ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/{public_id}",
+    operation_id="deleteTwistById",
+    summary="Soft-delete a pending twist (only during RECEPCION_IDEAS)",
+)
+async def delete_twist_by_id(
+    request: Request,
+    public_id: UUID,
+    user: UserRow = Depends(require_user),
+    service: TwistSubmissionService = Depends(get_twist_submission_service),
+) -> Response:
+    """Soft-delete one of the caller's twists.
+
+    Idempotent: re-DELETE of an already-deleted twist returns the same
+    200 with the original ``deleted_at``. Per FR-004, the user's quota
+    is NOT freed.
+    """
+    try:
+        result = await service.delete(
+            user_id=int(user.id),
+            twist_public_id=public_id,
+        )
+    except KillSwitchActive as exc:
+        _log.info(
+            "twist_delete",
+            outcome="error",
+            user_id=int(user.id),
+            code="under_maintenance",
+            status=503,
+        )
+        return _problem(
+            request=request,
+            status=503,
+            code="under_maintenance",
+            title="Service is under maintenance",
+            extra={
+                "reason": exc.reason,
+                "retry_after_seconds": _RETRY_AFTER_SECONDS,
+            },
+            retry_after=_RETRY_AFTER_SECONDS,
+        )
+    except WindowClosed:
+        _log.info(
+            "twist_delete",
+            outcome="error",
+            user_id=int(user.id),
+            code="window_closed",
+            status=409,
+        )
+        return _problem(
+            request=request,
+            status=409,
+            code="window_closed",
+            title="Submit window is closed; delete no longer allowed",
+        )
+    except TwistNotFound:
+        _log.info(
+            "twist_delete",
+            outcome="error",
+            user_id=int(user.id),
+            twist_id=str(public_id),
+            code="twist_not_found",
+            status=404,
+        )
+        return _problem(
+            request=request,
+            status=404,
+            code="twist_not_found",
+            title="Twist not found",
+            extra={"public_id": str(public_id)},
+        )
+    except ForbiddenNotOwner:
+        _log.info(
+            "twist_delete",
+            outcome="error",
+            user_id=int(user.id),
+            twist_id=str(public_id),
+            code="forbidden_not_owner",
+            status=403,
+        )
+        return _problem(
+            request=request,
+            status=403,
+            code="forbidden_not_owner",
+            title="This twist belongs to another user",
+        )
+    except AlreadyFiltered:
+        _log.info(
+            "twist_delete",
+            outcome="error",
+            user_id=int(user.id),
+            twist_id=str(public_id),
+            code="already_filtered",
+            status=409,
+        )
+        return _problem(
+            request=request,
+            status=409,
+            code="already_filtered",
+            title="Twist has already been filtered and is immutable",
+        )
+
+    dto = DeleteResponseDTO(
+        twist_id=public_id,
+        deleted_at=result.deleted_at.isoformat(),
+        remaining_submissions=result.quota.remaining,
+    )
+    _log.info(
+        "twist_delete",
+        outcome="ok",
+        user_id=int(user.id),
+        twist_id=str(public_id),
+        was_idempotent=result.was_idempotent,
+        status=200,
+        remaining_submissions=result.quota.remaining,
+    )
+    return JSONResponse(
+        status_code=200,
         content=dto.model_dump(mode="json"),
     )
