@@ -31,7 +31,8 @@
     "list-invites": "pnpm --filter ./apps/api list-invites --",
     "bootstrap-cycle": "pnpm --filter ./apps/api bootstrap-cycle --",
     "replay-tick": "pnpm --filter ./apps/api replay-tick --",
-    "kill-switch": "pnpm --filter ./apps/api kill-switch --"
+    "kill-switch": "pnpm --filter ./apps/api kill-switch --",
+    "rerun-filter": "pnpm --filter ./apps/api rerun-filter --"
   },
   "devDependencies": {
     "concurrently": "^9.0.0",
