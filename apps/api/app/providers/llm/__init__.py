@@ -1,6 +1,6 @@
 """LLM provider abstraction + concrete implementations.
 
-Module 006 / Task T-001 (base + Fake), T-004 (Router), T-002 (Gemini).
+Module 006 / Tasks T-001..T-004.
 
 The base ABC, typed exceptions, and the ``Fake`` provider land first
 (T-001). The :class:`LLMProviderRouter` (T-004) implements the FR-004
@@ -18,11 +18,13 @@ from app.providers.llm.base import (
 )
 from app.providers.llm.fake import FakeLLMProvider
 from app.providers.llm.gemini import GeminiProvider
+from app.providers.llm.github_models import GitHubModelsProvider
 from app.providers.llm.router import LLMProviderRouter
 
 __all__ = [
     "FakeLLMProvider",
     "GeminiProvider",
+    "GitHubModelsProvider",
     "LLMProvider",
     "LLMProviderError",
     "LLMProviderInvalidOutput",
