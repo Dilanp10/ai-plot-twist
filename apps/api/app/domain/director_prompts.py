@@ -19,12 +19,30 @@ so callers (T-010 the service) can build it without knowing Jinja.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-from uuid import UUID
 
 from jinja2 import Environment, StrictUndefined
+
+from app.domain.director_context import (
+    ChapterBrief,
+    CurrentChapterInput,
+    DirectorContext,
+    SeasonInput,
+    TwistInput,
+)
+
+__all__ = [
+    "DIRECTOR_V1_SYSTEM_SHA256",
+    "DIRECTOR_V1_USER_SHA256",
+    "ChapterBrief",
+    "CurrentChapterInput",
+    "DirectorContext",
+    "SeasonInput",
+    "TwistInput",
+    "current_hashes",
+    "load_system_prompt",
+    "render_user_prompt",
+]
 
 # ---------------------------------------------------------------------------
 # Paths + module-level cached file contents
@@ -53,61 +71,6 @@ DIRECTOR_V1_SYSTEM_SHA256: str = (
 DIRECTOR_V1_USER_SHA256: str = (
     "391aa3e55aeb11fed899470569cab5f0b653a785a969c4f1bdab48f8327a73d1"
 )
-
-
-# ---------------------------------------------------------------------------
-# DirectorContext — input to the user-prompt renderer
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class SeasonInput:
-    """Season slice the director sees: just the bible JSON."""
-
-    bible_json: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class ChapterBrief:
-    """Compact view of a past chapter for the recent-history block."""
-
-    day_index: int
-    title: str
-    synopsis: str
-
-
-@dataclass(frozen=True)
-class CurrentChapterInput:
-    """Current chapter shape — full manifest is needed for the cliffhanger."""
-
-    day_index: int
-    title: str
-    synopsis: str
-    manifest_json: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class TwistInput:
-    """One twist to classify. ``public_id`` is the UUID the verdict refers to."""
-
-    public_id: UUID
-    content: str
-
-
-@dataclass(frozen=True)
-class DirectorContext:
-    """All the variables the user template references.
-
-    Construct this from the DB rows in the service layer (T-010), then
-    hand it to :func:`render_user_prompt`. Keeping it flat means the
-    template + the dataclass are the only places the prompt schema is
-    encoded.
-    """
-
-    season: SeasonInput
-    last_chapters: list[ChapterBrief]
-    current: CurrentChapterInput
-    batch: list[TwistInput]
 
 
 # ---------------------------------------------------------------------------

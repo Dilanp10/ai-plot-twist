@@ -1,6 +1,10 @@
 """TwistsRepo — SQLAlchemy Core repository for the ``twists`` table.
 
-Module 005 / Task T-004.
+Module 005 / Task T-004 (base methods).
+Module 006 / Task T-008 (filter + replay helpers:
+:meth:`TwistsRepo.list_pending_for_chapter`,
+:meth:`TwistsRepo.list_all_for_chapter_for_replay`,
+:meth:`TwistsRepo.update_status_bulk`).
 
 All methods operate on the caller-supplied ``AsyncSession``; the caller
 is responsible for committing or rolling back the transaction.
@@ -24,10 +28,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import sqlalchemy as sa
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,6 +68,23 @@ class Twist:
     submitted_at: datetime
     reviewed_at: datetime | None
     deleted_at: datetime | None
+
+
+@dataclass(frozen=True)
+class VerdictUpdate:
+    """One verdict to persist via :meth:`TwistsRepo.update_status_bulk`.
+
+    ``decision`` is one of ``approved``, ``rejected_offensive``,
+    ``rejected_incoherent``, ``rejected_spam`` (matches
+    :class:`app.domain.director_verdicts.Decision`). ``reason`` is the
+    short Spanish text shown in ``/me/twists`` — caller MUST truncate to
+    ≤80 chars before constructing this; the DB column is unconstrained
+    but the contract (module 006) caps it.
+    """
+
+    twist_id: int
+    decision: str
+    reason: str
 
 
 def _map_row(row: Any) -> Twist:
@@ -241,3 +263,110 @@ class TwistsRepo:
             if orig is not None and type(orig).__name__ == "LockNotAvailableError":
                 raise TwistLockBusy(user_id, chapter_id) from exc
             raise
+
+    # ------------------------------------------------------------------
+    # Director's filter (module 006 / T-008)
+    # ------------------------------------------------------------------
+
+    async def list_pending_for_chapter(
+        self, chapter_id: int
+    ) -> list[Twist]:
+        """Return all ``pending_review`` twists for ``chapter_id`` ordered
+        by ``submitted_at ASC``.
+
+        The deterministic ordering matters for batch chunking in the
+        filter service (T-009): the same input always yields the same
+        batches, so a partial run can be replayed without scrambling
+        which twist landed in which batch (research R-009).
+
+        Uses index ``idx_twists_chapter_status`` (module 005 migration
+        0007).
+        """
+        result = await self._s.execute(
+            sa.text(
+                f"SELECT {_SELECT_COLS} FROM twists "
+                "WHERE chapter_id = :chapter_id "
+                "AND status = 'pending_review' "
+                "ORDER BY submitted_at ASC"
+            ),
+            {"chapter_id": chapter_id},
+        )
+        return [_map_row(row) for row in result.mappings()]
+
+    async def list_all_for_chapter_for_replay(
+        self, chapter_id: int
+    ) -> list[Twist]:
+        """Return every twist for ``chapter_id`` except ``deleted_by_user``,
+        ordered by ``submitted_at ASC``.
+
+        Used by the admin replay endpoint (T-011) to re-classify already-
+        classified twists. Borrados quedan afuera por contrato del
+        data-model: jamás se re-clasifica algo que el usuario eliminó.
+        """
+        result = await self._s.execute(
+            sa.text(
+                f"SELECT {_SELECT_COLS} FROM twists "
+                "WHERE chapter_id = :chapter_id "
+                "AND status != 'deleted_by_user' "
+                "ORDER BY submitted_at ASC"
+            ),
+            {"chapter_id": chapter_id},
+        )
+        return [_map_row(row) for row in result.mappings()]
+
+    async def update_status_bulk(
+        self,
+        updates: list[VerdictUpdate],
+        *,
+        allow_already_classified: bool = False,
+    ) -> int:
+        """Apply N verdicts inside the caller's transaction; return the
+        total number of rows actually updated.
+
+        ``allow_already_classified=False`` (default, used by the FILTERING
+        side-effect): each UPDATE is guarded by
+        ``status = 'pending_review'``, so re-runs of the same batch are
+        idempotent — a twist already classified is silently skipped (its
+        rowcount contributes 0 to the return).
+
+        ``allow_already_classified=True`` (used by the admin replay
+        endpoint): the guard relaxes to ``status != 'deleted_by_user'``,
+        so already-classified twists ARE re-written, but borrados nunca
+        se tocan.
+
+        Empty ``updates`` is a no-op that returns 0 without hitting the DB.
+        """
+        if not updates:
+            return 0
+
+        if allow_already_classified:
+            stmt = sa.text(
+                "UPDATE twists "
+                "SET status = :decision, "
+                "    director_reason = :reason, "
+                "    reviewed_at = now() "
+                "WHERE id = :twist_id "
+                "AND status != 'deleted_by_user'"
+            )
+        else:
+            stmt = sa.text(
+                "UPDATE twists "
+                "SET status = :decision, "
+                "    director_reason = :reason, "
+                "    reviewed_at = now() "
+                "WHERE id = :twist_id "
+                "AND status = 'pending_review'"
+            )
+
+        total = 0
+        for u in updates:
+            result = await self._s.execute(
+                stmt,
+                {
+                    "decision": u.decision,
+                    "reason": u.reason,
+                    "twist_id": u.twist_id,
+                },
+            )
+            total += cast(CursorResult[Any], result).rowcount or 0
+        return total

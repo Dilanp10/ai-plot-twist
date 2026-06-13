@@ -22,7 +22,7 @@ from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from alembic import command
-from app.infra.twists_repo import Twist, TwistsRepo
+from app.infra.twists_repo import Twist, TwistsRepo, VerdictUpdate
 
 API_DIR = Path(__file__).parent.parent.parent
 ALEMBIC_INI = API_DIR / "alembic.ini"
@@ -371,4 +371,270 @@ async def test_lock_user_chapter_smoke(session: AsyncSession) -> None:
         await repo.lock_user_chapter(user[0], chapter_id)
     finally:
         await session.rollback()
+        await _cleanup(session, season_id, user)
+
+
+# ---------------------------------------------------------------------------
+# list_pending_for_chapter  (module 006 / T-008)
+# ---------------------------------------------------------------------------
+
+
+async def _force_status(
+    session: AsyncSession, twist_id: int, status: str, reason: str | None = None
+) -> None:
+    """Bypass the repo to put a twist in an arbitrary classified status.
+
+    Used to seed mixed-status fixtures for the filter/replay tests.
+    """
+    await session.execute(
+        sa.text(
+            "UPDATE twists "
+            "SET status = :s, director_reason = :r, reviewed_at = now() "
+            "WHERE id = :id"
+        ),
+        {"s": status, "r": reason, "id": twist_id},
+    )
+
+
+async def test_list_pending_for_chapter_orders_by_submitted_at_asc(
+    session: AsyncSession,
+) -> None:
+    season_id, chapter_id = await _make_season_and_chapter(session, "pend-ord")
+    user = await _make_user(session)
+    await session.commit()
+    repo = TwistsRepo(session)
+    try:
+        t1 = await repo.insert(chapter_id, user[0], "primera pending xxx")
+        await session.commit()
+        t2 = await repo.insert(chapter_id, user[0], "segunda pending xxx")
+        await session.commit()
+        t3 = await repo.insert(chapter_id, user[0], "tercera pending xxx")
+        await session.commit()
+
+        rows = await repo.list_pending_for_chapter(chapter_id)
+        assert [t.id for t in rows] == [t1.id, t2.id, t3.id]
+        assert all(t.status == "pending_review" for t in rows)
+    finally:
+        await _cleanup(session, season_id, user)
+
+
+async def test_list_pending_for_chapter_excludes_non_pending(
+    session: AsyncSession,
+) -> None:
+    """Only ``pending_review`` rows come back — approved/rejected/deleted out."""
+    season_id, chapter_id = await _make_season_and_chapter(session, "pend-excl")
+    user = await _make_user(session)
+    await session.commit()
+    repo = TwistsRepo(session)
+    try:
+        t_pending = await repo.insert(chapter_id, user[0], "queda pendiente xxx")
+        t_approved = await repo.insert(chapter_id, user[0], "lo aprueban xxxxxx")
+        t_rejected = await repo.insert(chapter_id, user[0], "lo rechazan xxxxxx")
+        t_deleted = await repo.insert(chapter_id, user[0], "lo borran xxxxxxxx")
+        await session.commit()
+
+        await _force_status(session, t_approved.id, "approved", "ok")
+        await _force_status(
+            session, t_rejected.id, "rejected_incoherent", "off-topic"
+        )
+        await session.commit()
+        await repo.soft_delete(t_deleted.id)
+        await session.commit()
+
+        rows = await repo.list_pending_for_chapter(chapter_id)
+        assert [t.id for t in rows] == [t_pending.id]
+    finally:
+        await _cleanup(session, season_id, user)
+
+
+async def test_list_pending_for_chapter_empty_returns_empty_list(
+    session: AsyncSession,
+) -> None:
+    season_id, chapter_id = await _make_season_and_chapter(session, "pend-empty")
+    user = await _make_user(session)
+    await session.commit()
+    repo = TwistsRepo(session)
+    try:
+        assert await repo.list_pending_for_chapter(chapter_id) == []
+    finally:
+        await _cleanup(session, season_id, user)
+
+
+# ---------------------------------------------------------------------------
+# list_all_for_chapter_for_replay  (module 006 / T-008)
+# ---------------------------------------------------------------------------
+
+
+async def test_list_replay_includes_classified_excludes_deleted(
+    session: AsyncSession,
+) -> None:
+    season_id, chapter_id = await _make_season_and_chapter(session, "rep-mix")
+    user = await _make_user(session)
+    await session.commit()
+    repo = TwistsRepo(session)
+    try:
+        t_pending = await repo.insert(chapter_id, user[0], "sigue pending xxxx")
+        t_approved = await repo.insert(chapter_id, user[0], "ya aprobado xxxxx")
+        t_rejected = await repo.insert(chapter_id, user[0], "ya rechazado xxxx")
+        t_deleted = await repo.insert(chapter_id, user[0], "el borrado xxxxxxx")
+        await session.commit()
+
+        await _force_status(session, t_approved.id, "approved", "ok")
+        await _force_status(
+            session, t_rejected.id, "rejected_offensive", "slur"
+        )
+        await session.commit()
+        await repo.soft_delete(t_deleted.id)
+        await session.commit()
+
+        rows = await repo.list_all_for_chapter_for_replay(chapter_id)
+        ids = {t.id for t in rows}
+        assert ids == {t_pending.id, t_approved.id, t_rejected.id}
+        # Order is ASC by submitted_at — three inserts in sequence.
+        assert [t.id for t in rows] == [
+            t_pending.id,
+            t_approved.id,
+            t_rejected.id,
+        ]
+    finally:
+        await _cleanup(session, season_id, user)
+
+
+# ---------------------------------------------------------------------------
+# update_status_bulk  (module 006 / T-008)
+# ---------------------------------------------------------------------------
+
+
+async def test_update_status_bulk_empty_is_noop(session: AsyncSession) -> None:
+    repo = TwistsRepo(session)
+    assert await repo.update_status_bulk([]) == 0
+    assert await repo.update_status_bulk([], allow_already_classified=True) == 0
+
+
+async def test_update_status_bulk_strict_updates_pending(
+    session: AsyncSession,
+) -> None:
+    """Default mode writes status+reason+reviewed_at on pending twists."""
+    season_id, chapter_id = await _make_season_and_chapter(session, "upd-ok")
+    user = await _make_user(session)
+    await session.commit()
+    repo = TwistsRepo(session)
+    try:
+        t1 = await repo.insert(chapter_id, user[0], "primero pending xxxx")
+        t2 = await repo.insert(chapter_id, user[0], "segundo pending xxxx")
+        await session.commit()
+
+        affected = await repo.update_status_bulk(
+            [
+                VerdictUpdate(t1.id, "approved", "todo bien"),
+                VerdictUpdate(t2.id, "rejected_spam", "publicidad"),
+            ]
+        )
+        await session.commit()
+        assert affected == 2
+
+        fetched1 = await repo.get_by_public_id_for_update(t1.public_id)
+        fetched2 = await repo.get_by_public_id_for_update(t2.public_id)
+        assert fetched1 is not None and fetched2 is not None
+        assert fetched1.status == "approved"
+        assert fetched1.director_reason == "todo bien"
+        assert fetched1.reviewed_at is not None
+        assert fetched2.status == "rejected_spam"
+        assert fetched2.director_reason == "publicidad"
+        assert fetched2.reviewed_at is not None
+    finally:
+        await _cleanup(session, season_id, user)
+
+
+async def test_update_status_bulk_strict_skips_already_classified(
+    session: AsyncSession,
+) -> None:
+    """Strict guard means re-running a verdict for an approved twist is a no-op."""
+    season_id, chapter_id = await _make_season_and_chapter(session, "upd-skip")
+    user = await _make_user(session)
+    await session.commit()
+    repo = TwistsRepo(session)
+    try:
+        t_pending = await repo.insert(chapter_id, user[0], "queda pending xxxx")
+        t_approved = await repo.insert(chapter_id, user[0], "ya aprobado xxxxx")
+        await session.commit()
+
+        await _force_status(session, t_approved.id, "approved", "old reason")
+        await session.commit()
+
+        affected = await repo.update_status_bulk(
+            [
+                VerdictUpdate(t_pending.id, "approved", "fresh"),
+                VerdictUpdate(t_approved.id, "rejected_spam", "should not stick"),
+            ]
+        )
+        await session.commit()
+        assert affected == 1
+
+        fetched_approved = await repo.get_by_public_id_for_update(
+            t_approved.public_id
+        )
+        assert fetched_approved is not None
+        assert fetched_approved.status == "approved"
+        assert fetched_approved.director_reason == "old reason"
+    finally:
+        await _cleanup(session, season_id, user)
+
+
+async def test_update_status_bulk_relaxed_overwrites_classified(
+    session: AsyncSession,
+) -> None:
+    """Replay mode rewrites already-classified twists."""
+    season_id, chapter_id = await _make_season_and_chapter(session, "upd-replay")
+    user = await _make_user(session)
+    await session.commit()
+    repo = TwistsRepo(session)
+    try:
+        t_approved = await repo.insert(chapter_id, user[0], "lo re-clasifican xx")
+        await session.commit()
+
+        await _force_status(session, t_approved.id, "approved", "previous")
+        await session.commit()
+
+        affected = await repo.update_status_bulk(
+            [VerdictUpdate(t_approved.id, "rejected_offensive", "post-filter")],
+            allow_already_classified=True,
+        )
+        await session.commit()
+        assert affected == 1
+
+        fetched = await repo.get_by_public_id_for_update(t_approved.public_id)
+        assert fetched is not None
+        assert fetched.status == "rejected_offensive"
+        assert fetched.director_reason == "post-filter"
+    finally:
+        await _cleanup(session, season_id, user)
+
+
+async def test_update_status_bulk_relaxed_still_skips_deleted(
+    session: AsyncSession,
+) -> None:
+    """Even in replay mode, deleted_by_user is sacred and never re-classified."""
+    season_id, chapter_id = await _make_season_and_chapter(session, "upd-del")
+    user = await _make_user(session)
+    await session.commit()
+    repo = TwistsRepo(session)
+    try:
+        t_del = await repo.insert(chapter_id, user[0], "se lo borra xxxxxxx")
+        await session.commit()
+        await repo.soft_delete(t_del.id)
+        await session.commit()
+
+        affected = await repo.update_status_bulk(
+            [VerdictUpdate(t_del.id, "approved", "should not touch")],
+            allow_already_classified=True,
+        )
+        await session.commit()
+        assert affected == 0
+
+        fetched = await repo.get_by_public_id_for_update(t_del.public_id)
+        assert fetched is not None
+        assert fetched.status == "deleted_by_user"
+        assert fetched.director_reason is None
+    finally:
         await _cleanup(session, season_id, user)
