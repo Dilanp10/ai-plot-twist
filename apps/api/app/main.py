@@ -26,6 +26,7 @@ from fastapi import FastAPI
 from app.api.auth import router as auth_router
 from app.api.chapters import router as chapters_router
 from app.api.health import router as health_router
+from app.api.internal_director_replay import router as internal_director_replay_router
 from app.api.internal_health_cycle import router as internal_health_cycle_router
 from app.api.internal_kill_switch import router as internal_kill_switch_router
 from app.api.internal_transition import router as internal_transition_router
@@ -111,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(internal_transition_router)
     app.include_router(internal_kill_switch_router)
     app.include_router(internal_health_cycle_router)
+    app.include_router(internal_director_replay_router)
     app.include_router(auth_router)
     app.include_router(chapters_router)
     app.include_router(seasons_router)
