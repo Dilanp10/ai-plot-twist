@@ -1,10 +1,10 @@
 # Quickstart: Twist Submission
 
-**Branch**: `005-twists-submission` | **Date**: 2026-06-07
+**Branch**: `005-twists-submission` | **Date**: 2026-06-07 (updated 2026-06-13)
 **Depends on**: modules 001 + 002 + 003 + 004 merged. Cycle in `RECEPCION_IDEAS`,
 user redeemed an invite, JWT in hand.
 
-## Status (2026-06-12)
+## Status (2026-06-13)
 
 | Phase | Status |
 |---|---|
@@ -12,16 +12,32 @@ user redeemed an invite, JWT in hand.
 | 1 — pure domain (twist_content, twist_quota) | ✅ done + tests green |
 | 2 — TwistsRepo + TwistLockBusy | ✅ done + integration tests green |
 | 3 — TwistSubmissionService (submit + delete + list_mine) | ✅ done + integration tests green |
-| 4 — HTTP endpoints (POST, DELETE, GET /me/twists) | ✅ code + integration tests green; **prod deploy pending re-deploy** |
+| 4 — HTTP endpoints (POST, DELETE, GET /me/twists) | ✅ code + integration tests green + **deployed to Fly (image `01KV0XYVE41F0DRJRFSCSTNET0`)** |
 | 5 — race test | ✅ 2 tests green (10×concurrent → 3×201 + 7×409) |
 | 6 — PWA (twist-api, twist-store, TwistModal, MyTwistsPanel, today.svelte) | ✅ done + vitest green; **Pages deploy pending** |
 | 7 — SDD §5.5 patch + ADR-0002 | ✅ done |
-| 7 — T-016 deploy + smoke | ⏳ partial: migration 0007 applied to Neon; full re-deploy of API + Pages + E2E smoke deferred to post-ESTRENO (2026-06-13) |
+| 7 — T-016 deploy + smoke | ✅ **done 2026-06-13**: Fly image deployed; 8/8 smoke asserts green vs prod (see "Verified prod smoke" block below) |
 
-The smoke flow (§ below) can only be validated end-to-end once:
-1. The API is re-deployed with the Phase 4 endpoints (current prod image is from before T-007).
-2. The PWA is re-deployed to Cloudflare Pages with the Phase 6 components.
-3. The 2026-06-13 ESTRENO tick moves the bootstrap chapter to `status='live'`.
+## Verified prod smoke (2026-06-13)
+
+Run on cycle 2 (`cycle_date=2026-06-13`, state `RECEPCION_IDEAS`) after the
+T-008/T-009/`tick-1201-recepcion` fixes plus the `_Q1_ACTIVE_TODAY` ordering
+patch (`fix(004) commit 07d1266`). Invite-code `3LSA-Z2AL` issued via
+`fly ssh console` to Neon; user `SmokeT016` redeemed the JWT against
+`https://ai-plot-twist.fly.dev`. Eight asserts:
+
+| # | Endpoint | Expected | Result |
+|---|---|---|---|
+| 1 | `POST /twists/submit` (happy) | 201, `pending_review`, quota-aware `remaining_submissions` | ✅ 201 |
+| 2 | replay same `Idempotency-Key` + same body | 200 + same `public_id` | ✅ 200, same id |
+| 3 | replay same `Idempotency-Key` + DIFFERENT body | 409 `idempotency_conflict` | ✅ 409 |
+| 4 | submit until quota full | 201 × 2 | ✅ (observed via 3 inserts across attempts) |
+| 5 | submit beyond quota | 409 `over_quota` (`quota_used=3, quota_max=3`) | ✅ 409 |
+| 6 | `GET /me/twists` | 3 items + `quota={used:3,max:3,remaining:0}` | ✅ |
+| 7 | `DELETE /twists/{id}` twice | 200 × 2, `deleted_at` stable across calls | ✅ stable `2026-06-13T17:11:32.831086+00:00` |
+| 8 | submit after delete | 409 `over_quota` — delete does NOT free the slot (FR-004) | ✅ |
+
+Smoke driver: `scripts/smoke_t016.py` (urllib + Python stdlib, no extra deps).
 
 ---
 
