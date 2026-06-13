@@ -94,6 +94,15 @@ class Settings(BaseSettings):
     # delete). Override per-env via MAX_TWISTS_PER_USER_PER_CHAPTER.
     max_twists_per_user_per_chapter: int = 3
 
+    # ── Module 006 (director's filter) ──────────────────────────────────────
+    # Either or both may be absent in dev/test — main.py logs a warning at
+    # boot and leaves the no-op stub registered for ``director_filter`` (so
+    # the FSM still cycles through FILTERING without invoking an LLM).
+    # When BOTH are set, T-010 wires the real
+    # LLMProviderRouter([GeminiProvider, GitHubModelsProvider]).
+    gemini_api_key: str | None = None
+    github_models_token: str | None = None
+
     # ── Derived helpers ──────────────────────────────────────────────────────
 
     @property

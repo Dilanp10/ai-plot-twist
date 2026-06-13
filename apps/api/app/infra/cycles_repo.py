@@ -151,6 +151,31 @@ class CyclesRepo:
         row = result.mappings().one_or_none()
         return _map_row(row) if row is not None else None
 
+    async def get_by_chapter_id(self, chapter_id: int) -> CycleRow | None:
+        """Return the most recent cycle that references ``chapter_id``.
+
+        Module 006 / T-010: the director-filter side-effect closure needs
+        the ``cycle_id`` to build the ``state_transitions.trigger_id`` for
+        the VOTACION transition (FR-012). The closure only receives the
+        ``chapter_id`` (matches the registry signature
+        ``(int) -> Awaitable[None]``).
+
+        Ordering by ``cycle_date DESC`` mirrors :meth:`get_active`, so the
+        same chapter being referenced by an old FAILED cycle and a fresh
+        active one returns the fresh one.
+        """
+        result = await self._s.execute(
+            sa.text(
+                f"SELECT {_SELECT_COLS} FROM cycles "
+                "WHERE chapter_id = :chapter_id "
+                "ORDER BY cycle_date DESC "
+                "LIMIT 1"
+            ),
+            {"chapter_id": chapter_id},
+        )
+        row = result.mappings().one_or_none()
+        return _map_row(row) if row is not None else None
+
     async def update_state(
         self,
         cycle_id: int,

@@ -36,14 +36,14 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Awaitable, Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domain.director_context import (
     ChapterBrief,
@@ -55,6 +55,7 @@ from app.domain.director_context import (
 from app.domain.director_prompts import load_system_prompt, render_user_prompt
 from app.domain.director_verdicts import DirectorBatchResponse, DirectorVerdict
 from app.domain.slur_list import matches_slur
+from app.infra.cycles_repo import CyclesRepo
 from app.infra.twists_repo import Twist, TwistsRepo, VerdictUpdate
 from app.providers.llm.router import LLMProviderRouter
 
@@ -469,3 +470,59 @@ def _empty_summary(chapter_id: int, started_at: float) -> FilterSummary:
         slur_overrides=0,
         duration_ms=int((time.monotonic() - started_at) * 1000),
     )
+
+
+# ---------------------------------------------------------------------------
+# Side-effect adapter (T-010 wires this into the side_effects registry)
+# ---------------------------------------------------------------------------
+
+
+def build_director_filter_side_effect(
+    session_factory: async_sessionmaker[AsyncSession],
+    router: LLMProviderRouter,
+) -> Callable[[int], Awaitable[None]]:
+    """Return a real ``director_filter`` side-effect bound to *router*.
+
+    Module 006 / Task T-010.
+
+    The side-effects registry (module 003) expects an
+    ``async (chapter_id: int) -> None`` callable. This adapter:
+
+      1. Opens a fresh ``AsyncSession`` from *session_factory* — the
+         HTTP request's session is long-closed by the time the FastAPI
+         ``BackgroundTask`` invokes us.
+      2. Runs the T-009 orchestrator (which commits per batch).
+      3. Looks up the ``cycle_id`` so the trigger_id matches FR-012's
+         shape ``"director-{cycle_id}-{uuid}"``. ``state_transitions``
+         has a UNIQUE on ``trigger_id``, so a hypothetical retry would
+         hit ``already_applied`` instead of double-transitioning.
+      4. Calls :func:`app.domain.cycle_executor.transition` with
+         ``requested_to='VOTACION'`` and ``triggered_by='side_effect'``.
+
+    Exceptions propagate. Module 003's ``safe_side_effect`` wrapper
+    catches them and drives the cycle to ``FAILED``.
+    """
+    # Import locally to avoid a circular at module-import time.
+    from app.domain.cycle_executor import transition
+
+    async def _real_director_filter(chapter_id: int) -> None:
+        async with session_factory() as session:
+            await run_director_filter(
+                chapter_id, session=session, router=router
+            )
+
+            cycle = await CyclesRepo(session).get_by_chapter_id(chapter_id)
+            if cycle is None:
+                raise RuntimeError(
+                    f"director_filter completed for chapter_id={chapter_id} "
+                    "but no cycle references it; cannot transition to VOTACION"
+                )
+
+            await transition(
+                session,
+                requested_to="VOTACION",
+                triggered_by="side_effect",
+                trigger_id=f"director-{cycle.id}-{uuid4()}",
+            )
+
+    return _real_director_filter

@@ -33,22 +33,37 @@ from app.api.internal_transition import router as internal_transition_router
 from app.api.me_twists import router as me_twists_router
 from app.api.seasons import router as seasons_router
 from app.api.twists import router as twists_router
-from app.db import dispose_engine
+from app.db import dispose_engine, get_session_factory
+from app.domain import side_effects
+from app.domain.director_filter import build_director_filter_side_effect
 from app.errors import ProblemDetail, problem_handler
 from app.logging import configure_logging, get_logger
 from app.middleware.request_id import RequestIdMiddleware
+from app.providers.llm import (
+    GeminiProvider,
+    GitHubModelsProvider,
+    LLMProvider,
+    LLMProviderRouter,
+)
 from app.settings import Settings, get_settings
 
 _log = get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan: configure logging on startup, dispose engine on shutdown.
 
     The DB engine is created lazily on first use (see ``app.db.get_engine``),
     so startup does not depend on the DB being reachable — the ``/healthz``
     endpoint (T-010) is what surfaces DB problems.
+
+    Module 006 / T-010: if both ``GEMINI_API_KEY`` and
+    ``GITHUB_MODELS_TOKEN`` are set, wire the real
+    :class:`LLMProviderRouter` onto ``app.state.director_router`` and
+    overwrite the no-op ``director_filter`` side-effect registered by
+    module 003. Missing either key keeps the stub in place and logs a
+    warning so the operator can fix the deployment.
     """
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -68,11 +83,80 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             detail="TICK_SECRET is not set; /internal/* will return 503.",
         )
 
+    _wire_director_filter(app, settings)
+
     try:
         yield
     finally:
         _log.info("app_shutdown")
         await dispose_engine()
+
+
+def _build_director_router(
+    settings: Settings,
+) -> LLMProviderRouter | None:
+    """Construct the production LLMProviderRouter from ``settings``.
+
+    Returns ``None`` when neither provider key is set; a single-provider
+    router when only one is set (logs a degraded-mode warning); the full
+    ``[Gemini, GitHubModels]`` chain when both are set.
+    """
+    providers: list[LLMProvider] = []
+    if settings.gemini_api_key:
+        providers.append(GeminiProvider(api_key=settings.gemini_api_key))
+    if settings.github_models_token:
+        providers.append(
+            GitHubModelsProvider(api_key=settings.github_models_token)
+        )
+    if not providers:
+        return None
+    return LLMProviderRouter(providers)
+
+
+def _wire_director_filter(app: FastAPI, settings: Settings) -> None:
+    """Register the real director_filter side-effect when keys are present.
+
+    If keys are missing, the no-op stub registered by
+    :mod:`app.domain.side_effects` at import time stays in place so the
+    FSM still cycles through ``FILTERING → VOTACION`` without invoking
+    an LLM (useful for staging without quota).
+    """
+    router = _build_director_router(settings)
+    if router is None:
+        _log.warning(
+            "director_router_missing_keys",
+            detail=(
+                "GEMINI_API_KEY and GITHUB_MODELS_TOKEN are both unset; "
+                "director_filter remains a no-op stub. The FSM will skip "
+                "moderation and twists stay in pending_review."
+            ),
+        )
+        app.state.director_router = None
+        return
+
+    if len(router.provider_names) == 1:
+        _log.warning(
+            "director_router_degraded",
+            detail=(
+                "Only one LLM provider key is set; the router has no "
+                "fallback. Set the missing key to recover full FR-004 "
+                "coverage."
+            ),
+            providers=router.provider_names,
+        )
+    else:
+        _log.info(
+            "director_router_registered",
+            providers=router.provider_names,
+        )
+
+    app.state.director_router = router
+
+    real_side_effect = build_director_filter_side_effect(
+        get_session_factory(), router
+    )
+    side_effects.register("director_filter", real_side_effect)
+    _log.info("side_effect_registered", name="director_filter")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
