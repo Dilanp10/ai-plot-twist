@@ -1,0 +1,56 @@
+name: tick-1201-recepcion
+
+# Auto-tick ESTRENO → RECEPCION_IDEAS (FSM dwell 60 s,
+# cycle_fsm.py:46). The spec calls this an "auto-tick after 60 s" but
+# no infrastructure dispatched it, leaving cycles stuck in ESTRENO
+# until the watchdog declared them FAILED.
+#
+# Primary trigger: workflow_run after tick-12-estreno succeeds, with a
+# 60-s sleep to honor the FSM dwell. Safety-net cron at 15:05 UTC in
+# case the workflow_run event is dropped (rare but documented). The
+# /internal/transition endpoint enforces UNIQUE on trigger_id, so a
+# double-fire from both triggers is an idempotent no-op.
+#
+# Required GitHub secrets: API_URL, TICK_SECRET
+
+on:
+  workflow_run:
+    workflows: ["tick-12-estreno"]
+    types: [completed]
+  schedule:
+    - cron: '5 15 * * *'
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Skip when triggered by a tick-12-estreno run that did not succeed.
+    if: >
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Wait 60 s for ESTRENO dwell
+        if: github.event_name == 'workflow_run'
+        run: sleep 60
+
+      - name: Compute HMAC-SHA256 and POST transition
+        env:
+          TICK_SECRET: ${{ secrets.TICK_SECRET }}
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          ts=$(date -u +%s)
+          body=$(jq -nc \
+            --arg     to             "RECEPCION_IDEAS" \
+            --argjson ts             "$ts" \
+            --arg     run            "$GITHUB_RUN_ID" \
+            --argjson retry_attempt  "$GITHUB_RUN_ATTEMPT" \
+            '{to: $to, ts: $ts, trigger_id: $run, retry_attempt: $retry_attempt}')
+          sig=$(printf '%s' "$body" | \
+            openssl dgst -sha256 -hmac "$TICK_SECRET" -binary | base64)
+          curl --fail --silent --show-error \
+            --retry 3 --retry-delay 10 \
+            -X POST "${API_URL}/api/v1/internal/transition" \
+            -H "Content-Type: application/json" \
+            -H "X-Tick-Signature: ${sig}" \
+            -d "$body"
