@@ -44,6 +44,9 @@ package = false
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "live: smoke tests against real external APIs (require API keys; excluded from CI)",
+]
 
 [tool.mypy]
 # mypy.ini is used instead; this section is intentionally absent to keep

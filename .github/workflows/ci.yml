@@ -65,7 +65,7 @@ jobs:
         env:
           # Override the env-level placeholder with the real service container URL.
           DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/aiplottwist
-        run: uv run pytest -q
+        run: uv run pytest -q -m "not live"
 
   # ──────────────────────────────────────────────────────────────────────────
   # Web — type-check (svelte-check), lint (eslint), and unit tests (vitest)
