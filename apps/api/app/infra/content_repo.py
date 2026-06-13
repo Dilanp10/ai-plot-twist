@@ -114,6 +114,7 @@ FROM cycles c
 JOIN chapters ch ON ch.id = c.chapter_id
 JOIN seasons  s  ON s.id  = c.season_id
 WHERE s.is_active = TRUE
+ORDER BY c.cycle_date DESC, c.id DESC
 LIMIT 1
 """.strip()
 
