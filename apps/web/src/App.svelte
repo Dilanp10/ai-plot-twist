@@ -20,6 +20,8 @@
   import { authStore } from './lib/auth-store.svelte';
   import AppShell from './lib/components/AppShell.svelte';
   import ErrorBoundary from './lib/components/ErrorBoundary.svelte';
+  import IosInstallSheet from './lib/components/IosInstallSheet.svelte';
+  import SwUpdateToast from './lib/components/SwUpdateToast.svelte';
   import { router } from './lib/router.svelte';
   import Me from './routes/me.svelte';
   import Onboarding from './routes/onboarding.svelte';
@@ -79,5 +81,7 @@
         {/if}
       </ErrorBoundary>
     </AppShell>
+    <IosInstallSheet />
+    <SwUpdateToast />
   {/if}
 {/if}
