@@ -1,0 +1,35 @@
+name: Manual FSM transition (admin)
+
+on:
+  workflow_dispatch:
+    inputs:
+      to:
+        description: Target state (e.g. VOTACION, FILTERING, FAILED)
+        required: true
+        type: string
+
+jobs:
+  transition:
+    name: Force transition to ${{ inputs.to }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST transition
+        env:
+          TICK_SECRET: ${{ secrets.TICK_SECRET }}
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          ts=$(date -u +%s)
+          body=$(jq -nc \
+            --arg     to             "${{ inputs.to }}" \
+            --argjson ts             "$ts" \
+            --arg     run            "$GITHUB_RUN_ID" \
+            --argjson retry_attempt  "$GITHUB_RUN_ATTEMPT" \
+            '{to: $to, ts: $ts, trigger_id: $run, retry_attempt: $retry_attempt}')
+          sig=$(printf '%s' "$body" | \
+            openssl dgst -sha256 -hmac "$TICK_SECRET" -binary | base64)
+          curl --fail --silent --show-error \
+            --retry 3 --retry-delay 5 \
+            -X POST "${API_URL}/api/v1/internal/transition" \
+            -H "Content-Type: application/json" \
+            -H "X-Tick-Signature: ${sig}" \
+            -d "$body"
