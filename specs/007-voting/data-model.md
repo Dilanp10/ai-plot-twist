@@ -15,7 +15,7 @@ One new table: `votes`. Schema mirrors SDD §3.1. One migration: `0008_votes.py`
 | `id` | `BIGSERIAL` | `PRIMARY KEY` | |
 | `twist_id` | `BIGINT` | `NOT NULL REFERENCES twists(id) ON DELETE CASCADE` | |
 | `user_id` | `BIGINT` | `NOT NULL REFERENCES users(id)` | Author of the vote. |
-| `chapter_id` | `BIGINT` | `NOT NULL REFERENCES chapters(id)` | Denormalized from `twists.chapter_id` for fast quota count. Service layer enforces equality on insert. |
+| `chapter_id` | `BIGINT` | `NOT NULL REFERENCES chapters(id) ON DELETE CASCADE` | Denormalized from `twists.chapter_id` for fast quota count. Service layer enforces equality on insert. CASCADE so cleanup of a chapter takes its votes along with it (votes also CASCADE via `twist_id`, but the redundant CASCADE on `chapter_id` keeps the FK chain consistent if a chapter is ever deleted without first deleting its twists). |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT now()` | |
 | (uniq) | | `UNIQUE (twist_id, user_id)` | **One vote per user per twist.** Atomic enforcement. |
 
@@ -56,7 +56,8 @@ def upgrade():
         sa.Column("user_id", sa.BigInteger,
                   sa.ForeignKey("users.id"), nullable=False),
         sa.Column("chapter_id", sa.BigInteger,
-                  sa.ForeignKey("chapters.id"), nullable=False),
+                  sa.ForeignKey("chapters.id", ondelete="CASCADE"),
+                  nullable=False),
         sa.Column("created_at", sa.TIMESTAMP(timezone=True),
                   server_default=sa.text("now()"), nullable=False),
         sa.UniqueConstraint("twist_id", "user_id",

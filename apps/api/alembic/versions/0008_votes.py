@@ -50,7 +50,7 @@ def upgrade() -> None:
         sa.Column(
             "chapter_id",
             sa.BigInteger,
-            sa.ForeignKey("chapters.id"),
+            sa.ForeignKey("chapters.id", ondelete="CASCADE"),
             nullable=False,
         ),
         sa.Column(
