@@ -20,8 +20,9 @@
   import { router } from '../lib/router.svelte';
   import { windowFor } from '../lib/window-countdown';
   import Countdown from '../lib/Countdown.svelte';
-  import TwistModal from '../lib/components/TwistModal.svelte';
   import MyTwistsPanel from '../lib/components/MyTwistsPanel.svelte';
+  import Skeleton from '../lib/components/Skeleton.svelte';
+  import TwistModal from '../lib/components/TwistModal.svelte';
 
   let modalOpen = $state(false);
 
@@ -79,10 +80,12 @@
 
 <main class="today">
   {#if chapterStore.status === 'loading' || chapterStore.status === 'idle'}
-    <section class="skeleton" data-testid="loading">
-      <div class="block"></div>
-      <div class="block"></div>
-      <div class="block"></div>
+    <section class="loading-skeleton" data-testid="loading">
+      <Skeleton height="2rem" width="60%" />
+      <Skeleton height="1rem" width="40%" />
+      <Skeleton height="280px" radius="var(--radius-md)" />
+      <Skeleton height="1rem" />
+      <Skeleton height="1rem" width="80%" />
     </section>
   {:else if chapterStore.status === 'ok' && chapterStore.data}
     {@const dto = chapterStore.data}
@@ -335,27 +338,10 @@
     cursor: pointer;
   }
 
-  .skeleton {
+  .loading-skeleton {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    margin-top: 2rem;
-  }
-
-  .skeleton .block {
-    height: 6rem;
-    background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
-    background-size: 200% 100%;
-    animation: skeleton-shimmer 1.4s infinite;
-    border-radius: 0.5rem;
-  }
-
-  @keyframes skeleton-shimmer {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
+    gap: var(--space-3);
+    margin-top: var(--space-5);
   }
 </style>

@@ -26,6 +26,7 @@ from fastapi import FastAPI
 from app.api.auth import router as auth_router
 from app.api.chapters import router as chapters_router
 from app.api.health import router as health_router
+from app.api.internal_client_log import router as internal_client_log_router
 from app.api.internal_director_replay import router as internal_director_replay_router
 from app.api.internal_generation_rerun import router as internal_generation_rerun_router
 from app.api.internal_health_cycle import router as internal_health_cycle_router
@@ -322,6 +323,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(internal_health_cycle_router)
     app.include_router(internal_director_replay_router)
     app.include_router(internal_generation_rerun_router)
+    app.include_router(internal_client_log_router)
     app.include_router(auth_router)
     app.include_router(chapters_router)
     app.include_router(seasons_router)

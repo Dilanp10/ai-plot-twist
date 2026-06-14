@@ -40,11 +40,13 @@ class ProblemDetail(Exception):
         code: str,
         title: str,
         detail: str = "",
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.status = status
         self.code = code
         self.title = title
         self.detail = detail
+        self.headers = headers
         super().__init__(detail or title)
 
 
@@ -70,4 +72,5 @@ async def problem_handler(request: Request, exc: Exception) -> JSONResponse:
         status_code=exc.status,
         content=body,
         media_type="application/problem+json",
+        headers=exc.headers,
     )

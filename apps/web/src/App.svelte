@@ -19,6 +19,7 @@
   import { onMount } from 'svelte';
   import { authStore } from './lib/auth-store.svelte';
   import AppShell from './lib/components/AppShell.svelte';
+  import ErrorBoundary from './lib/components/ErrorBoundary.svelte';
   import { router } from './lib/router.svelte';
   import Me from './routes/me.svelte';
   import Onboarding from './routes/onboarding.svelte';
@@ -61,18 +62,22 @@
 
 {#if initialized}
   {#if router.current === '/onboarding'}
-    <Onboarding />
+    <ErrorBoundary>
+      <Onboarding />
+    </ErrorBoundary>
   {:else}
     <AppShell>
-      {#if router.current === '/vote'}
-        <Vote />
-      {:else if router.current === '/me'}
-        <Me />
-      {:else if router.current === '/settings'}
-        <Settings />
-      {:else}
-        <Today />
-      {/if}
+      <ErrorBoundary>
+        {#if router.current === '/vote'}
+          <Vote />
+        {:else if router.current === '/me'}
+          <Me />
+        {:else if router.current === '/settings'}
+          <Settings />
+        {:else}
+          <Today />
+        {/if}
+      </ErrorBoundary>
     </AppShell>
   {/if}
 {/if}

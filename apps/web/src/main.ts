@@ -7,6 +7,11 @@
  */
 import { mount } from "svelte";
 import App from "./App.svelte";
+import { installGlobalHandlers } from "./lib/client-logger";
+
+// Module 010 / T-011: forward window-level errors + unhandled rejections
+// to /internal/client-log (throttled to 10/min on the client).
+installGlobalHandlers();
 
 const target = document.getElementById("app");
 if (target === null) {

@@ -12,6 +12,7 @@
    */
   import { onMount } from 'svelte';
   import MyVotesIndicator from '../lib/components/MyVotesIndicator.svelte';
+  import Skeleton from '../lib/components/Skeleton.svelte';
   import VoteCard from '../lib/components/VoteCard.svelte';
   import { router } from '../lib/router.svelte';
   import type { SortMode } from '../lib/vote-api';
@@ -79,10 +80,10 @@
   </nav>
 
   {#if voteStore.status === 'loading' && voteStore.items.length === 0}
-    <section class="skeleton" data-testid="loading">
-      <div class="block"></div>
-      <div class="block"></div>
-      <div class="block"></div>
+    <section class="loading-skeleton" data-testid="loading">
+      <Skeleton height="6rem" radius="var(--radius-md)" />
+      <Skeleton height="6rem" radius="var(--radius-md)" />
+      <Skeleton height="6rem" radius="var(--radius-md)" />
     </section>
   {:else if voteStore.status === 'maintenance'}
     <section class="banner maintenance" data-testid="maintenance">
@@ -226,17 +227,10 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
-  .skeleton {
+  .loading-skeleton {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-  }
-  .skeleton .block {
-    height: 5rem;
-    background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.4s infinite;
-    border-radius: 0.5rem;
+    gap: var(--space-3);
   }
   .banner {
     text-align: center;
@@ -263,13 +257,5 @@
     border: 0;
     border-radius: 0.25rem;
     cursor: pointer;
-  }
-  @keyframes shimmer {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
   }
 </style>
