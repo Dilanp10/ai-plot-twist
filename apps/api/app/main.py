@@ -27,6 +27,7 @@ from app.api.auth import router as auth_router
 from app.api.chapters import router as chapters_router
 from app.api.health import router as health_router
 from app.api.internal_director_replay import router as internal_director_replay_router
+from app.api.internal_generation_rerun import router as internal_generation_rerun_router
 from app.api.internal_health_cycle import router as internal_health_cycle_router
 from app.api.internal_kill_switch import router as internal_kill_switch_router
 from app.api.internal_transition import router as internal_transition_router
@@ -184,6 +185,10 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
     token is absent — we catch that and degrade to the stub rather than
     crash the boot.
     """
+    app.state.image_router = None
+    app.state.scriptwriter = None
+    app.state.r2_uploader = None
+
     director_router = getattr(app.state, "director_router", None)
     if director_router is None:
         _log.warning(
@@ -193,7 +198,6 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
                 "generation_pipeline remains a no-op stub."
             ),
         )
-        app.state.image_router = None
         return
 
     missing_r2 = [
@@ -217,7 +221,6 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
                 "generation_pipeline remains a no-op stub."
             ),
         )
-        app.state.image_router = None
         return
 
     try:
@@ -231,7 +234,6 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
             env=settings.generation_image_chain_env,
             error=str(exc),
         )
-        app.state.image_router = None
         return
 
     image_router = ImageProviderRouter(
@@ -259,6 +261,9 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
     )
 
     scriptwriter = Scriptwriter(director_router)
+    app.state.scriptwriter = scriptwriter
+    app.state.r2_uploader = uploader
+
     real_side_effect = build_generation_pipeline_side_effect(
         get_session_factory(),
         scriptwriter,
@@ -316,6 +321,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(internal_kill_switch_router)
     app.include_router(internal_health_cycle_router)
     app.include_router(internal_director_replay_router)
+    app.include_router(internal_generation_rerun_router)
     app.include_router(auth_router)
     app.include_router(chapters_router)
     app.include_router(seasons_router)

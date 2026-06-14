@@ -67,6 +67,25 @@ RECENT_CHAPTERS_LIMIT = 3
 
 
 @dataclass(frozen=True)
+class GenerationSummary:
+    """Outcome of a single :func:`run_generation_pipeline` execution.
+
+    Returned so the admin rerun endpoint can describe what changed
+    without re-querying the DB. The cycle-driven side-effect path
+    discards this value (its closure adapts the signature to
+    ``Callable[[int], Awaitable[None]]``).
+    """
+
+    new_chapter_id: int
+    new_chapter_public_id: UUID
+    status: str
+    panels_ok: int
+    panels_degraded: int
+    duration_ms: int
+    has_winner: bool
+
+
+@dataclass(frozen=True)
 class _PipelineCtx:
     """All DB-derived state needed by the pipeline after context loading.
 
@@ -441,7 +460,8 @@ async def run_generation_pipeline(
     tts_voice: str,
     panel_concurrency: int,
     deadline_s: float,
-) -> None:
+    skip_cycle_transition: bool = False,
+) -> GenerationSummary:
     """Run the full generation pipeline for *chapter_id*.
 
     Parameters
@@ -466,6 +486,15 @@ async def run_generation_pipeline(
     deadline_s:
         Hard wall-clock budget for the panel phase.  Any panels not
         done within this limit fall back to placeholder.
+    skip_cycle_transition:
+        When ``True``, skip the final ``PENDING_RELEASE`` transition.
+        Used by the admin rerun endpoint (FR-013): rerun replaces a
+        manifest without touching cycle state.
+
+    Returns
+    -------
+    GenerationSummary
+        Counts and identifiers describing the persisted chapter.
 
     Raises
     ------
@@ -576,13 +605,14 @@ async def run_generation_pipeline(
     await session.commit()
 
     # --- Step 7: Transition cycle to PENDING_RELEASE ---
-    await _transition_to_pending_release(session, ctx.cycle_id, new_chapter_id)
-    await session.commit()
+    if not skip_cycle_transition:
+        await _transition_to_pending_release(session, ctx.cycle_id, new_chapter_id)
+        await session.commit()
 
     logger.info(
         "generation_completed chapter_id=%d new_chapter_id=%d "
         "status=%s duration_ms=%d panels_ok=%d panels_degraded=%d "
-        "has_winner=%s",
+        "has_winner=%s skipped_cycle_transition=%s",
         chapter_id,
         new_chapter_id,
         status,
@@ -590,6 +620,17 @@ async def run_generation_pipeline(
         panels_ok,
         panels_degraded,
         has_winner,
+        skip_cycle_transition,
+    )
+
+    return GenerationSummary(
+        new_chapter_id=new_chapter_id,
+        new_chapter_public_id=ctx.new_chapter_public_id,
+        status=status,
+        panels_ok=panels_ok,
+        panels_degraded=panels_degraded,
+        duration_ms=duration_ms,
+        has_winner=has_winner,
     )
 
 
