@@ -1,0 +1,177 @@
+"""Shared helpers for generation pipeline integration tests.
+
+Module 008 / Task T-010.
+
+All tests patch the three DB seams so no real database is required:
+  - ``_load_ctx_from_db``
+  - ``_persist_new_chapter``
+  - ``_transition_to_pending_release``
+
+Real pipeline components are used for everything else:
+  - FakeLLMProvider → Scriptwriter
+  - FakeImageProvider → ImageProviderRouter
+  - AsyncMock → R2Uploader
+"""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID, uuid4
+
+from app.domain.generation_pipeline import _PipelineCtx
+from app.domain.scriptwriter import Scriptwriter
+from app.domain.scriptwriter_prompts import ChapterBrief, ScriptContext, SeasonBrief
+from app.domain.scriptwriter_response import Panel, ScriptwriterResponse
+from app.domain.winner_selector import WinnerPick
+from app.infra.r2_uploader import R2Uploader
+from app.providers.image.fake import FakeImageProvider
+from app.providers.image.router import ImageProviderRouter
+from app.providers.llm.fake import FakeLLMProvider
+from app.providers.llm.router import LLMProviderRouter
+
+# ---------------------------------------------------------------------------
+# Fixed identifiers (stable across test runs for assertion equality)
+# ---------------------------------------------------------------------------
+
+CHAPTER_ID = 10
+SEASON_ID = 1
+SEASON_SLUG = "s01-el-tunel"
+CYCLE_ID = 42
+NEW_CHAPTER_PUBLIC_ID: UUID = uuid4()
+PLACEHOLDER_URL = "https://assets.example.com/static/placeholder.webp"
+TTS_VOICE = "es-AR-ElenaNeural"
+
+_GOOD_VISUAL = "a shattered mirror reflecting two timelines, cinematic 35mm"
+_GOOD_NARRATION = "El espejo crujió como hielo viejo al amanecer."
+
+
+# ---------------------------------------------------------------------------
+# Preset objects
+# ---------------------------------------------------------------------------
+
+
+def make_winner_pick(
+    *,
+    with_winner: bool = True,
+    tiebreak: bool = False,
+) -> WinnerPick:
+    if with_winner:
+        return WinnerPick(
+            winner_twist_id=99,
+            winner_public_id=uuid4(),
+            winner_user_display_name="Alice",
+            vote_count=7,
+            tiebreak=tiebreak,
+            runner_up_twist_id=uuid4() if tiebreak else None,
+        )
+    return WinnerPick(
+        winner_twist_id=None,
+        winner_public_id=None,
+        winner_user_display_name=None,
+        vote_count=0,
+        tiebreak=False,
+        runner_up_twist_id=None,
+    )
+
+
+def make_ctx(
+    *,
+    winner_pick: WinnerPick | None = None,
+    winner_content: str | None = "La propuesta ganadora de Alice.",
+    n_panels: int = 3,
+) -> _PipelineCtx:
+    """Return a preset _PipelineCtx (no DB needed)."""
+    if winner_pick is None:
+        winner_pick = make_winner_pick(with_winner=(winner_content is not None))
+    return _PipelineCtx(
+        cycle_id=CYCLE_ID,
+        season_id=SEASON_ID,
+        season_slug=SEASON_SLUG,
+        script_context=ScriptContext(
+            season=SeasonBrief(
+                title="El túnel sin fondo",
+                bible_json={"genre": "thriller", "setting": "Buenos Aires 2026"},
+            ),
+            recent_chapters=[
+                ChapterBrief(
+                    day_index=9,
+                    title="La decisión",
+                    synopsis="Valentina eligió cruzar el espejo.",
+                    cliffhanger="¿Qué la esperaba del otro lado?",
+                )
+            ],
+            current_chapter=ChapterBrief(
+                day_index=10,
+                title="El otro lado",
+                synopsis="Valentina descubrió que su doble la esperaba.",
+                cliffhanger="La doble susurró su nombre al revés.",
+            ),
+            next_day_index=11,
+            winner_content=winner_content,
+        ),
+        winner_pick=winner_pick,
+        current_day_index=10,
+        new_chapter_public_id=NEW_CHAPTER_PUBLIC_ID,
+    )
+
+
+def make_script(n_panels: int = 3) -> ScriptwriterResponse:
+    panels = [
+        Panel(
+            idx=i,
+            narration=_GOOD_NARRATION,
+            visual_prompt=_GOOD_VISUAL,
+            mood="tense",
+            tts_text=_GOOD_TTS_TEXT,
+        )
+        for i in range(1, n_panels + 1)
+    ]
+    return ScriptwriterResponse(
+        title="El capítulo once",
+        synopsis="Valentina descifra el mensaje de su doble y escapa.",
+        panels=panels,
+        cliffhanger="Un tercer espejo apareció donde no había ninguno.",
+        next_cliffhanger_seed="El tercer espejo muestra el futuro.",
+    )
+
+
+_GOOD_TTS_TEXT = "El espejo crujió como hielo viejo al amanecer."
+
+
+# ---------------------------------------------------------------------------
+# Component factories
+# ---------------------------------------------------------------------------
+
+
+def make_scriptwriter(script: ScriptwriterResponse) -> Scriptwriter:
+    """Return a Scriptwriter backed by a FakeLLMProvider seeded with *script*."""
+    provider = FakeLLMProvider([script])
+    router = LLMProviderRouter([provider], check_health=False)
+    return Scriptwriter(router)
+
+
+def make_image_router() -> ImageProviderRouter:
+    """Return an ImageProviderRouter backed by FakeImageProvider."""
+    return ImageProviderRouter(
+        [FakeImageProvider()],
+        check_health=False,
+        backoff_schedule_seconds=(0.0,),
+    )
+
+
+def make_uploader(
+    base_url: str = "https://r2.example.com",
+) -> R2Uploader:
+    """Return a mock R2Uploader that returns a URL from the key."""
+    uploader = MagicMock(spec=R2Uploader)
+    uploader.upload = AsyncMock(
+        side_effect=lambda key, body, ct: f"{base_url}/{key}"
+    )
+    return uploader
+
+
+def make_mock_session() -> AsyncMock:
+    """Return a minimal AsyncSession mock (commit is a no-op)."""
+    session = AsyncMock()
+    session.commit = AsyncMock()
+    return session
