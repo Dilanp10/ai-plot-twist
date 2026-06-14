@@ -1,0 +1,123 @@
+/*
+ * Theme tokens — CSS custom properties.
+ *
+ * Module 010 / Task T-001.
+ *
+ * Honors prefers-color-scheme (spec Out of Scope: no toggle).
+ * Names follow the Tailwind-ish "<role>-<step>" convention so future
+ * components can pick semantic tokens (text, surface, accent) instead
+ * of raw colors.
+ *
+ * Import once from the root of the app (vite handles the rest):
+ *   import '$lib/theme-tokens.css';
+ */
+
+:root {
+  /* ---- Colors (light, default) ---- */
+  --color-bg: #fafafa;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f5f5f5;
+  --color-border: #e5e5e5;
+
+  --color-text: #111111;
+  --color-text-muted: #555555;
+  --color-text-inverse: #ffffff;
+
+  --color-accent: #6c4cff;
+  --color-accent-hover: #5a3bdb;
+  --color-accent-text: #ffffff;
+
+  --color-success: #228b22;
+  --color-warning: #d97706;
+  --color-danger: #b91c1c;
+
+  /* ---- Cycle state badges ---- */
+  --color-state-estreno: #6c4cff;
+  --color-state-recepcion: #2563eb;
+  --color-state-filtering: #d97706;
+  --color-state-votacion: #16a34a;
+  --color-state-generacion: #6c4cff;
+  --color-state-pending: #555555;
+  --color-state-failed: #b91c1c;
+
+  /* ---- Typography ---- */
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: var(--font-body);
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+  --font-size-2xl: 2rem;
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+
+  /* ---- Spacing (4-pt rhythm) ---- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  /* ---- Radius ---- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  /* ---- Shadows ---- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+  /* ---- Layout ---- */
+  --layout-max-width: 480px;
+  --layout-topbar-height: 56px;
+  --layout-bottomnav-height: 64px;
+  --layout-safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* ---- Motion ---- */
+  --motion-fast: 120ms;
+  --motion-normal: 200ms;
+  --motion-easing: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0f0f10;
+    --color-surface: #1a1a1c;
+    --color-surface-elevated: #232326;
+    --color-border: #2c2c30;
+
+    --color-text: #f5f5f5;
+    --color-text-muted: #a0a0a0;
+    --color-text-inverse: #111111;
+
+    --color-accent: #8b6cff;
+    --color-accent-hover: #a08aff;
+    --color-accent-text: #0f0f10;
+
+    --color-success: #4ade80;
+    --color-warning: #fbbf24;
+    --color-danger: #ef4444;
+
+    --color-state-estreno: #8b6cff;
+    --color-state-recepcion: #60a5fa;
+    --color-state-filtering: #fbbf24;
+    --color-state-votacion: #4ade80;
+    --color-state-generacion: #8b6cff;
+    --color-state-pending: #a0a0a0;
+    --color-state-failed: #ef4444;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-normal: 0ms;
+  }
+}
