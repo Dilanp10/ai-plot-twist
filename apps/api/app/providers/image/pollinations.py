@@ -14,9 +14,20 @@ image directly from a URL. URL pattern is defined in SDD §4.4:
 Exception mapping (router policy lives in :class:`ImageProviderRouter`):
 
   HTTP 429 / explicit rate-limit body → ``ImageProviderRateLimited``
+  HTTP 402 (x402 "Queue full for IP") → ``ImageProviderRateLimited``
   HTTP 5xx / timeout / connect error  → ``ImageProviderUnavailable``
   Non-image ``Content-Type`` / 0 bytes → ``ImageProviderInvalidOutput``
   Other (auth misconfiguration, 4xx)  → ``ImageProviderError``
+
+Note on HTTP 402: as of mid-2026 Pollinations rolled out the ``x402``
+payment protocol with a per-IP queue cap of 1 concurrent request on
+the free tier. The response body looks like::
+
+    {"x402Version":1,"error":"Queue full for IP: ... (max: 1). ..."}
+
+Semantically this is a rate limit (the resource is gated by capacity,
+not by auth), so the router should skip to the next provider on this
+attempt — exactly the policy attached to ``RateLimited``.
 """
 
 from __future__ import annotations
@@ -132,6 +143,12 @@ class PollinationsProvider(ImageProvider):
         if resp.status_code == 429:
             raise ImageProviderRateLimited(
                 f"pollinations 429: {resp.text[:120]!r}"
+            )
+        if resp.status_code == 402:
+            # x402 "Payment Required" with queue-full body — semantic
+            # rate-limit on the free tier (see module docstring).
+            raise ImageProviderRateLimited(
+                f"pollinations 402 x402-queue-full: {resp.text[:160]!r}"
             )
         if 500 <= resp.status_code < 600:
             raise ImageProviderUnavailable(

@@ -132,6 +132,33 @@ async def test_429_raises_rate_limited() -> None:
             await p.generate(ImageRequest(prompt="x", seed=0))
 
 
+async def test_402_x402_queue_full_raises_rate_limited() -> None:
+    """The x402 'Queue full for IP' free-tier signal must map to RateLimited.
+
+    Real response observed against image.pollinations.ai mid-2026; the
+    router must skip to the next provider instead of raising the base
+    error (which would otherwise leak to the operator as a config bug).
+    """
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            402,
+            json={
+                "x402Version": 1,
+                "error": (
+                    "Queue full for IP: 2a06:98c0:3600::103: 1 requests "
+                    "already queued (max: 1). Get unlimited access..."
+                ),
+            },
+        )
+
+    async with _client(handler) as c:
+        p = PollinationsProvider(client=c)
+        with pytest.raises(ImageProviderRateLimited) as exc:
+            await p.generate(ImageRequest(prompt="x", seed=0))
+        assert "402" in str(exc.value)
+
+
 @pytest.mark.parametrize("status", [500, 502, 503, 504])
 async def test_5xx_raises_unavailable(status: int) -> None:
     def handler(_: httpx.Request) -> httpx.Response:

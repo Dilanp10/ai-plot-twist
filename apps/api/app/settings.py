@@ -110,6 +110,23 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     github_models_token: str | None = None
 
+    # ── Module 009 (image providers) ────────────────────────────────────────
+    # HuggingFace Bearer token for the FLUX.1-schnell fallback. Absent in
+    # dev (the dev chain is FakeImageProvider only). When module 008 wires
+    # ``chain_for_env("mvp")`` in prod, this MUST be set.
+    huggingface_token: str | None = None
+    # Per-call generate timeout for the image router. The default favors
+    # FLUX.1-schnell on cold start (~60s warmup + ~10s generation).
+    t2i_timeout_s: float = 120.0
+    # How many retries the router runs on a single provider after
+    # ImageProviderUnavailable before falling through to the next one.
+    # Initial attempt is NOT counted: max_retries=2 → 3 total attempts.
+    t2i_max_retries: int = 2
+    # Backoff schedule (seconds) used between retries on the SAME provider.
+    # CSV so it can be overridden via env (e.g. "1,3,8"). Indices past the
+    # end clamp to the last value.
+    t2i_backoff_seconds_csv: str = "2,8"
+
     # ── Derived helpers ──────────────────────────────────────────────────────
 
     @property
@@ -130,6 +147,23 @@ class Settings(BaseSettings):
     def is_test(self) -> bool:
         """True when running under pytest."""
         return self.env == "test"
+
+    @property
+    def t2i_backoff_seconds(self) -> tuple[float, ...]:
+        """Parse ``t2i_backoff_seconds_csv`` into the tuple the router expects.
+
+        Empty or malformed entries fall back to ``(2.0, 8.0)`` rather than
+        raising so a misconfigured env var doesn't crash boot.
+        """
+        try:
+            parts = [
+                float(s.strip())
+                for s in self.t2i_backoff_seconds_csv.split(",")
+                if s.strip()
+            ]
+        except ValueError:
+            parts = []
+        return tuple(parts) if parts else (2.0, 8.0)
 
 
 @lru_cache(maxsize=1)

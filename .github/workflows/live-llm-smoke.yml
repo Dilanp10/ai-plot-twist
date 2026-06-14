@@ -1,7 +1,12 @@
-name: Live LLM smoke
+name: Live external-API smoke
 
 # Nightly run at 02:00 UTC (before next prod cycle at 12:00 ART / 15:00 UTC).
 # Also triggerable manually for on-demand key validation.
+#
+# Covers:
+#   - Module 006: Gemini + GH Models providers (director's filter).
+#   - Module 009: Pollinations (no auth) + HuggingFace (FLUX.1-schnell)
+#     image providers.
 on:
   schedule:
     - cron: '0 2 * * *'
@@ -9,7 +14,7 @@ on:
 
 jobs:
   smoke:
-    name: Live LLM smoke — Gemini + GH Models
+    name: Live smoke — Gemini + GH Models + Pollinations + HuggingFace
     runs-on: ubuntu-latest
 
     steps:
@@ -32,6 +37,8 @@ jobs:
           # GH Actions forbids secrets starting with "GITHUB" — secret is GH_MODELS_TOKEN.
           # The provider checks both GH_MODELS_TOKEN and GITHUB_MODELS_TOKEN at test time.
           GH_MODELS_TOKEN: ${{ secrets.GH_MODELS_TOKEN }}
+          # Module 009 image-provider smokes (Pollinations is no-auth, runs whenever).
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
           # pydantic-settings requires DATABASE_URL and JWT_SECRET even when not connected.
           DATABASE_URL: postgresql+asyncpg://noop@localhost:5432/noop
           JWT_SECRET: live-smoke-placeholder-not-used
