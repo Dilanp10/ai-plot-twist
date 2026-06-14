@@ -52,6 +52,53 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff2}"],
         // Keep the runtime cache clean.
         cleanupOutdatedCaches: true,
+
+        // Module 010 / T-004 — FR-003 runtime caching:
+        //   /api/v1/chapters/today   → SWR, 10 min max age
+        //   /api/v1/seasons/*        → SWR, 1 h
+        //   R2 assets domain         → cacheFirst, 30 days
+        //   anything else under /api → networkOnly (no cache)
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname === "/api/v1/chapters/today",
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "api-chapters-today",
+              expiration: {
+                maxAgeSeconds: 10 * 60,
+                maxEntries: 8,
+              },
+            },
+          },
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith("/api/v1/seasons/"),
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "api-seasons",
+              expiration: {
+                maxAgeSeconds: 60 * 60,
+                maxEntries: 16,
+              },
+            },
+          },
+          {
+            urlPattern: ({ url }) =>
+              url.host === "assets.aiplottwist.example",
+            handler: "CacheFirst",
+            options: {
+              cacheName: "r2-assets",
+              expiration: {
+                maxAgeSeconds: 30 * 24 * 60 * 60,
+                maxEntries: 200,
+              },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
+            handler: "NetworkOnly",
+          },
+        ],
       },
 
       // Suppress the "PWA assets are not optimized" warning during dev.
