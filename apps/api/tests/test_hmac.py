@@ -31,7 +31,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.middleware.hmac_tick import TICK_SIGNATURE_HEADER, verify_hmac_tick
-from app.settings import get_settings
+from app.settings import Settings, get_settings
 
 _TEST_TICK_SECRET = "test-tick-secret"
 _TEST_ROUTE = "/__test/hmac"
@@ -73,6 +73,16 @@ def _build_hmac_app(monkeypatch: pytest.MonkeyPatch, *, tick_secret: str | None)
     get_settings.cache_clear()
 
     app = create_app()
+
+    if tick_secret is None:
+        # monkeypatch.delenv removes TICK_SECRET from os.environ, but
+        # pydantic-settings also reads .env.local (repo root), which may
+        # supply a fallback value.  Inject a Settings copy with
+        # tick_secret=None via FastAPI's dependency-override system so
+        # verify_hmac_tick sees the missing-secret condition regardless of
+        # any file on disk.
+        _no_tick: Settings = get_settings().model_copy(update={"tick_secret": None})
+        app.dependency_overrides[get_settings] = lambda: _no_tick
 
     @app.post(_TEST_ROUTE)
     async def _test_route(
