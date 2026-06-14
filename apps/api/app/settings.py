@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     r2_access_key_id: str | None = None
     r2_secret_access_key: str | None = None
     r2_bucket: str | None = None
+    # Public base URL for serving R2 assets (e.g. CDN domain). Required when
+    # module 008 wires the real generation_pipeline. Leave empty in dev/test.
+    r2_public_base_url: str | None = None
 
     # ── Module 005 (twists) ─────────────────────────────────────────────────
     # Per FR-004: deleted twists count toward the quota too (anti-spam-then-
@@ -126,6 +129,22 @@ class Settings(BaseSettings):
     # CSV so it can be overridden via env (e.g. "1,3,8"). Indices past the
     # end clamp to the last value.
     t2i_backoff_seconds_csv: str = "2,8"
+
+    # ── Module 008 (generation pipeline) ───────────────────────────────────
+    # Which image-provider chain the pipeline uses. ``dev`` → Fake only;
+    # ``mvp`` → Pollinations + HuggingFace (requires huggingface_token).
+    generation_image_chain_env: Literal["dev", "mvp"] = "dev"
+    # Public URL of the static placeholder image used when a panel fails.
+    # Resolved at request time; if unset, the real side-effect stays unwired.
+    generation_placeholder_url: str | None = None
+    # edge-tts voice for narration. Set to empty string to disable TTS.
+    generation_tts_voice: str = "es-AR-ElenaNeural"
+    # Max parallel render_panel() calls. Tuned against Fly.io 256 MB RAM:
+    # 4 keeps memory under control with FLUX warmup.
+    generation_panel_concurrency: int = 4
+    # Wall-clock deadline for the panel rendering phase. Panels in flight
+    # past this fall back to placeholder.
+    generation_deadline_s: float = 600.0
 
     # ── Derived helpers ──────────────────────────────────────────────────────
 

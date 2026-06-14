@@ -37,9 +37,13 @@ from app.api.voting import router as voting_router
 from app.db import dispose_engine, get_session_factory
 from app.domain import side_effects
 from app.domain.director_filter import build_director_filter_side_effect
+from app.domain.generation_pipeline import build_generation_pipeline_side_effect
+from app.domain.scriptwriter import Scriptwriter
 from app.errors import ProblemDetail, problem_handler
+from app.infra.r2_uploader import R2Uploader
 from app.logging import configure_logging, get_logger
 from app.middleware.request_id import RequestIdMiddleware
+from app.providers.image import ImageProviderRouter, chain_for_env
 from app.providers.llm import (
     GeminiProvider,
     GitHubModelsProvider,
@@ -85,6 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
     _wire_director_filter(app, settings)
+    _wire_generation_pipeline(app, settings)
 
     try:
         yield
@@ -158,6 +163,119 @@ def _wire_director_filter(app: FastAPI, settings: Settings) -> None:
     )
     side_effects.register("director_filter", real_side_effect)
     _log.info("side_effect_registered", name="director_filter")
+
+
+def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
+    """Register the real generation_pipeline side-effect when fully configured.
+
+    The pipeline requires three independent capabilities:
+
+    * an LLM router (already built for the director filter — we reuse
+      :attr:`app.state.director_router`),
+    * an :class:`ImageProviderRouter` via :func:`chain_for_env`, and
+    * an :class:`R2Uploader` (needs all four R2 credentials + the public
+      base URL).
+
+    If any of these are missing the no-op stub registered by
+    :mod:`app.domain.side_effects` stays in place so the FSM still
+    cycles through ``GENERACION → PENDING_RELEASE`` (useful for staging
+    without quotas). When ``generation_image_chain_env='mvp'`` is set,
+    :func:`chain_for_env` will raise ``ValueError`` if the HuggingFace
+    token is absent — we catch that and degrade to the stub rather than
+    crash the boot.
+    """
+    director_router = getattr(app.state, "director_router", None)
+    if director_router is None:
+        _log.warning(
+            "generation_pipeline_missing_llm_router",
+            detail=(
+                "director_router is None (LLM keys absent); "
+                "generation_pipeline remains a no-op stub."
+            ),
+        )
+        app.state.image_router = None
+        return
+
+    missing_r2 = [
+        name
+        for name, value in (
+            ("R2_ACCOUNT_ID", settings.r2_account_id),
+            ("R2_ACCESS_KEY_ID", settings.r2_access_key_id),
+            ("R2_SECRET_ACCESS_KEY", settings.r2_secret_access_key),
+            ("R2_BUCKET", settings.r2_bucket),
+            ("R2_PUBLIC_BASE_URL", settings.r2_public_base_url),
+            ("GENERATION_PLACEHOLDER_URL", settings.generation_placeholder_url),
+        )
+        if not value
+    ]
+    if missing_r2:
+        _log.warning(
+            "generation_pipeline_missing_r2_config",
+            missing=missing_r2,
+            detail=(
+                "R2 / placeholder configuration is incomplete; "
+                "generation_pipeline remains a no-op stub."
+            ),
+        )
+        app.state.image_router = None
+        return
+
+    try:
+        image_chain = chain_for_env(
+            settings.generation_image_chain_env,
+            huggingface_token=settings.huggingface_token,
+        )
+    except (ValueError, NotImplementedError) as exc:
+        _log.warning(
+            "generation_pipeline_image_chain_failed",
+            env=settings.generation_image_chain_env,
+            error=str(exc),
+        )
+        app.state.image_router = None
+        return
+
+    image_router = ImageProviderRouter(
+        image_chain,
+        max_retries_on_unavailable=settings.t2i_max_retries,
+        backoff_schedule_seconds=settings.t2i_backoff_seconds,
+    )
+    app.state.image_router = image_router
+
+    # mypy-narrowed locals: all five strings are non-empty per the missing_r2
+    # check above; pydantic-settings still types them as ``str | None``.
+    assert settings.r2_account_id is not None
+    assert settings.r2_access_key_id is not None
+    assert settings.r2_secret_access_key is not None
+    assert settings.r2_bucket is not None
+    assert settings.r2_public_base_url is not None
+    assert settings.generation_placeholder_url is not None
+
+    uploader = R2Uploader(
+        account_id=settings.r2_account_id,
+        key_id=settings.r2_access_key_id,
+        secret=settings.r2_secret_access_key,
+        bucket=settings.r2_bucket,
+        public_base_url=settings.r2_public_base_url,
+    )
+
+    scriptwriter = Scriptwriter(director_router)
+    real_side_effect = build_generation_pipeline_side_effect(
+        get_session_factory(),
+        scriptwriter,
+        image_router,
+        uploader,
+        placeholder_url=settings.generation_placeholder_url,
+        tts_voice=settings.generation_tts_voice,
+        panel_concurrency=settings.generation_panel_concurrency,
+        deadline_s=settings.generation_deadline_s,
+    )
+    side_effects.register("generation_pipeline", real_side_effect)
+    _log.info(
+        "side_effect_registered",
+        name="generation_pipeline",
+        image_chain=settings.generation_image_chain_env,
+        image_providers=image_router.provider_names,
+    )
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

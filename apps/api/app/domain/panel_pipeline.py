@@ -37,9 +37,12 @@ from app.domain.scriptwriter_response import Panel
 from app.domain.seed_derivation import stable_hash
 from app.domain.tts_synthesizer import synthesize
 from app.infra.r2_uploader import R2Uploader, R2UploadError
-from app.providers.image.base import ImageProviderUnavailable
-from app.providers.image.paths import compute_r2_path
-from app.providers.image.router import ImageProviderRouter
+from app.providers.image import (
+    ImageProviderRouter,
+    ImageProviderUnavailable,
+    ImageRequest,
+    compute_r2_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,8 +122,6 @@ async def render_panel(
     # -------------------------------------------------------------------------
     # Image render
     # -------------------------------------------------------------------------
-    from app.providers.image.base import ImageRequest  # local import avoids cycle
-
     req = ImageRequest(prompt=panel.visual_prompt, seed=seed)
 
     try:

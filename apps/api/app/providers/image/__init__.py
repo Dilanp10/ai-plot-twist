@@ -33,6 +33,7 @@ from app.providers.image.base import (
 )
 from app.providers.image.fake import FakeImageProvider
 from app.providers.image.huggingface import HuggingFaceProvider
+from app.providers.image.paths import compute_r2_path
 from app.providers.image.pollinations import PollinationsProvider
 from app.providers.image.router import ImageProviderRouter
 
@@ -46,6 +47,7 @@ __all__ = [
     "ImageRequest",
     "ImageResult",
     "chain_for_env",
+    "compute_r2_path",
 ]
 
 

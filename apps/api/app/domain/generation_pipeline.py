@@ -55,7 +55,7 @@ from app.domain.scriptwriter_prompts import ChapterBrief, ScriptContext, SeasonB
 from app.domain.scriptwriter_response import Panel, ScriptwriterResponse
 from app.domain.winner_selector import WinnerPick, pick_winner
 from app.infra.r2_uploader import R2Uploader
-from app.providers.image.router import ImageProviderRouter
+from app.providers.image import ImageProviderRouter
 
 logger = logging.getLogger(__name__)
 
