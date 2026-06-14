@@ -26,6 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError
@@ -71,6 +72,23 @@ def _map_row(row: Any) -> Vote:
 
 
 _SELECT_COLS = "id, twist_id, user_id, chapter_id, created_at"
+
+
+@dataclass(frozen=True)
+class FeedRow:
+    """One ``approved`` twist plus its current ``vote_count``.
+
+    Used by the vote-feed read path. The ``id`` field is the *internal*
+    integer id (needed to project ``has_my_vote`` cheaply against
+    ``list_for_user_chapter``); ``public_id`` is what is surfaced over
+    the wire.
+    """
+
+    id: int
+    public_id: UUID
+    content: str
+    vote_count: int
+    submitted_at: datetime
 
 
 class VotesRepo:
@@ -160,6 +178,43 @@ class VotesRepo:
         )
         row = result.scalar_one_or_none()
         return int(row) if row is not None else None
+
+    async def list_approved_with_vote_counts(
+        self, chapter_id: int
+    ) -> list[FeedRow]:
+        """Return every approved twist for ``chapter_id`` with its current
+        vote count.
+
+        ``LEFT JOIN`` so twists with 0 votes still appear. Uses
+        ``idx_twists_chapter_status`` for the WHERE filter and the
+        UNIQUE index on ``votes(twist_id, user_id)`` for the aggregation.
+        Ordering is deterministic by ``submitted_at ASC, id ASC`` so
+        Python-side cursor pagination stays stable across calls.
+        """
+        result = await self._s.execute(
+            sa.text(
+                "SELECT t.id, t.public_id, t.content, "
+                "       COUNT(v.id) AS vote_count, "
+                "       t.submitted_at "
+                "  FROM twists t "
+                "  LEFT JOIN votes v ON v.twist_id = t.id "
+                " WHERE t.chapter_id = :chapter_id "
+                "   AND t.status = 'approved' "
+                " GROUP BY t.id "
+                " ORDER BY t.submitted_at ASC, t.id ASC"
+            ),
+            {"chapter_id": chapter_id},
+        )
+        return [
+            FeedRow(
+                id=int(row["id"]),
+                public_id=UUID(str(row["public_id"])),
+                content=str(row["content"]),
+                vote_count=int(row["vote_count"]),
+                submitted_at=row["submitted_at"],
+            )
+            for row in result.mappings()
+        ]
 
     async def lock_user_chapter(
         self, user_id: int, chapter_id: int

@@ -94,6 +94,13 @@ class Settings(BaseSettings):
     # delete). Override per-env via MAX_TWISTS_PER_USER_PER_CHAPTER.
     max_twists_per_user_per_chapter: int = 3
 
+    # ── Module 007 (voting) ─────────────────────────────────────────────────
+    # Cap on how many twists a user can vote for in a chapter (FR-006).
+    max_votes_per_user_per_chapter: int = 5
+    # Closed-beta default per FR-009: self-voting allowed. Flip to false in
+    # prod once the cohort grows past family-and-friends.
+    allow_self_vote: bool = True
+
     # ── Module 006 (director's filter) ──────────────────────────────────────
     # Either or both may be absent in dev/test — main.py logs a warning at
     # boot and leaves the no-op stub registered for ``director_filter`` (so

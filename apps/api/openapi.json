@@ -1,6 +1,35 @@
 {
   "components": {
     "schemas": {
+      "BreakdownDTO": {
+        "description": "Per-decision counts; subset summed equals ``twist_count``.",
+        "properties": {
+          "approved": {
+            "title": "Approved",
+            "type": "integer"
+          },
+          "rejected_incoherent": {
+            "title": "Rejected Incoherent",
+            "type": "integer"
+          },
+          "rejected_offensive": {
+            "title": "Rejected Offensive",
+            "type": "integer"
+          },
+          "rejected_spam": {
+            "title": "Rejected Spam",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "approved",
+          "rejected_offensive",
+          "rejected_incoherent",
+          "rejected_spam"
+        ],
+        "title": "BreakdownDTO",
+        "type": "object"
+      },
       "ChapterDTO": {
         "properties": {
           "cliffhanger": {
@@ -303,6 +332,70 @@
         "title": "RefreshResponse",
         "type": "object"
       },
+      "ReplayPayload": {
+        "description": "Body for ``POST /director/replay``.",
+        "properties": {
+          "chapter_id": {
+            "description": "Chapter ``public_id`` (UUID) to re-classify.",
+            "format": "uuid",
+            "title": "Chapter Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chapter_id"
+        ],
+        "title": "ReplayPayload",
+        "type": "object"
+      },
+      "ReplayResponse": {
+        "properties": {
+          "batches": {
+            "title": "Batches",
+            "type": "integer"
+          },
+          "breakdown": {
+            "$ref": "#/components/schemas/BreakdownDTO"
+          },
+          "chapter_id": {
+            "format": "uuid",
+            "title": "Chapter Id",
+            "type": "string"
+          },
+          "classified": {
+            "title": "Classified",
+            "type": "integer"
+          },
+          "default_denied": {
+            "title": "Default Denied",
+            "type": "integer"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "slur_overrides": {
+            "title": "Slur Overrides",
+            "type": "integer"
+          },
+          "twist_count": {
+            "title": "Twist Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chapter_id",
+          "twist_count",
+          "classified",
+          "batches",
+          "breakdown",
+          "default_denied",
+          "slur_overrides",
+          "duration_ms"
+        ],
+        "title": "ReplayResponse",
+        "type": "object"
+      },
       "SeasonBriefDTO": {
         "properties": {
           "slug": {
@@ -387,6 +480,26 @@
         "title": "SeasonResponseDTO",
         "type": "object"
       },
+      "SubmitRequest": {
+        "description": "Request body for ``POST /twists/submit``.\n\n``content`` is validated by the domain normalizer (5..280 chars after\nNFKC + Cc/Cf/Co/Cs stripping + trim). The handler raises 422 on\nout-of-bounds values.",
+        "properties": {
+          "chapter_id": {
+            "format": "uuid",
+            "title": "Chapter Id",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chapter_id",
+          "content"
+        ],
+        "title": "SubmitRequest",
+        "type": "object"
+      },
       "TodayResponseDTO": {
         "properties": {
           "chapter": {
@@ -459,6 +572,21 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VoteRequest": {
+        "properties": {
+          "twist_id": {
+            "description": "UUID of the twist to vote for.",
+            "format": "uuid",
+            "title": "Twist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "twist_id"
+        ],
+        "title": "VoteRequest",
         "type": "object"
       },
       "WindowsDTO": {
@@ -717,6 +845,66 @@
         ]
       }
     },
+    "/api/v1/internal/director/replay": {
+      "post": {
+        "description": "Re-classify every non-deleted twist of *chapter_id*.\n\nDoes NOT touch ``cycles.state``. Each batch commits inside\n:func:`run_director_filter`, so a partial failure leaves the\nearlier-batch updates persisted.",
+        "operationId": "postInternalDirectorReplay",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Re-run the director's filter for a chapter (admin-only)",
+        "tags": [
+          "internal"
+        ]
+      }
+    },
     "/api/v1/internal/health/cycle": {
       "get": {
         "description": "Return a point-in-time snapshot of the active cycle's FSM state.",
@@ -859,6 +1047,26 @@
         ]
       }
     },
+    "/api/v1/me/twists": {
+      "get": {
+        "description": "Return the caller's twists for the active chapter.\n\nThe handler is intentionally tolerant of \"no live chapter\" — that is\na normal state (between cycles, pre-ESTRENO) and the PWA renders an\nempty panel rather than an error.",
+        "operationId": "getMeTwists",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the caller's twists for the current live chapter",
+        "tags": [
+          "twists"
+        ]
+      }
+    },
     "/api/v1/seasons/{slug}": {
       "get": {
         "description": "Resolve ``GET /seasons/{slug}`` per spec FR-005/FR-008.\n\nResponses:\n  * 200 — :class:`SeasonResponseDTO` with bible filtered to PUBLIC_BIBLE_KEYS.\n  * 503 — ``under_maintenance``.\n  * 404 — ``season_not_found``.",
@@ -899,6 +1107,215 @@
         "summary": "Season meta + public-safe bible + chapter counts",
         "tags": [
           "seasons"
+        ]
+      }
+    },
+    "/api/v1/twists/submit": {
+      "post": {
+        "description": "Submit a twist for the currently live chapter.\n\nThe handler delegates validation (kill-switch, window, chapter match,\nquota, idempotency) to :class:`TwistSubmissionService.submit` and\nmaps each domain exception to the contracted problem response.",
+        "operationId": "postTwistsSubmit",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit a continuation proposal for the current live chapter",
+        "tags": [
+          "twists"
+        ]
+      }
+    },
+    "/api/v1/twists/vote": {
+      "post": {
+        "operationId": "postTwistsVote",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cast a single vote for an approved twist",
+        "tags": [
+          "voting"
+        ]
+      }
+    },
+    "/api/v1/twists/vote-feed": {
+      "get": {
+        "operationId": "getTwistsVoteFeed",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "random",
+              "pattern": "^(random|recent|hot)$",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approved twists for the current live chapter, paginated",
+        "tags": [
+          "voting"
+        ]
+      }
+    },
+    "/api/v1/twists/{public_id}": {
+      "delete": {
+        "description": "Soft-delete one of the caller's twists.\n\nIdempotent: re-DELETE of an already-deleted twist returns the same\n200 with the original ``deleted_at``. Per FR-004, the user's quota\nis NOT freed.",
+        "operationId": "deleteTwistById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Public Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Soft-delete a pending twist (only during RECEPCION_IDEAS)",
+        "tags": [
+          "twists"
         ]
       }
     },

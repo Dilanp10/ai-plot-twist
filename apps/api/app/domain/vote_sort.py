@@ -20,10 +20,17 @@ from typing import Protocol, TypeVar
 
 
 class HasSortKeys(Protocol):
-    """Minimal item shape for vote-feed sorting."""
+    """Minimal item shape for vote-feed sorting.
 
-    submitted_at: datetime
-    vote_count: int
+    Declares the fields as read-only properties so frozen dataclasses
+    (which expose attributes as immutable) satisfy the protocol just as
+    well as mutable ones.
+    """
+
+    @property
+    def submitted_at(self) -> datetime: ...
+    @property
+    def vote_count(self) -> int: ...
 
 
 T = TypeVar("T", bound=HasSortKeys)

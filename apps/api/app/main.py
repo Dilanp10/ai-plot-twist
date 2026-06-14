@@ -33,6 +33,7 @@ from app.api.internal_transition import router as internal_transition_router
 from app.api.me_twists import router as me_twists_router
 from app.api.seasons import router as seasons_router
 from app.api.twists import router as twists_router
+from app.api.voting import router as voting_router
 from app.db import dispose_engine, get_session_factory
 from app.domain import side_effects
 from app.domain.director_filter import build_director_filter_side_effect
@@ -202,6 +203,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(seasons_router)
     app.include_router(twists_router)
     app.include_router(me_twists_router)
+    app.include_router(voting_router)
 
     return app
 
