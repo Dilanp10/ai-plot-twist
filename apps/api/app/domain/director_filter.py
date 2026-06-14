@@ -523,6 +523,7 @@ def build_director_filter_side_effect(
                 requested_to="VOTACION",
                 triggered_by="side_effect",
                 trigger_id=f"director-{cycle.id}-{uuid4()}",
+                skip_dwell=True,
             )
 
     return _real_director_filter
