@@ -17,6 +17,7 @@
   import { router } from './lib/router.svelte';
   import Onboarding from './routes/onboarding.svelte';
   import Today from './routes/today.svelte';
+  import Vote from './routes/vote.svelte';
 
   /** Tracks whether the async boot sequence has completed. */
   let initialized = $state(false);
@@ -44,7 +45,9 @@
 </script>
 
 {#if initialized}
-  {#if router.current === '/today'}
+  {#if router.current === '/vote'}
+    <Vote />
+  {:else if router.current === '/today'}
     <Today />
   {:else}
     <Onboarding />

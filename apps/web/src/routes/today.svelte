@@ -17,6 +17,7 @@
    */
   import { onMount } from 'svelte';
   import { chapterStore, type CycleState } from '../lib/chapter-store.svelte';
+  import { router } from '../lib/router.svelte';
   import { windowFor } from '../lib/window-countdown';
   import Countdown from '../lib/Countdown.svelte';
   import TwistModal from '../lib/components/TwistModal.svelte';
@@ -116,12 +117,22 @@
     {@const ctaLabel = ctaForState(dto.cycle_state)}
     {@const submitOpen = isSubmitWindowOpen(dto.windows.submit_until)}
     {@const canSubmitNow = dto.cycle_state === 'RECEPCION_IDEAS' && submitOpen}
+    {@const canVoteNow = dto.cycle_state === 'VOTACION'}
     {#if ctaLabel}
       {#if canSubmitNow}
         <button
           class="cta"
           type="button"
           onclick={() => (modalOpen = true)}
+          data-testid="cta"
+        >
+          {ctaLabel}
+        </button>
+      {:else if canVoteNow}
+        <button
+          class="cta"
+          type="button"
+          onclick={() => router.navigate('/vote')}
           data-testid="cta"
         >
           {ctaLabel}
