@@ -20,6 +20,8 @@ dependencies = [
     "jinja2>=3.1.6",
     "google-genai~=1.0",
     "openai~=1.50",
+    "boto3~=1.34",
+    "edge-tts~=6.1",
 ]
 
 [dependency-groups]
@@ -35,6 +37,7 @@ dev = [
     # JSON Schema validation for module 004 T-010 contract test.
     "jsonschema~=4.23",
     "types-jsonschema",
+    "boto3-stubs[s3]~=1.34",
 ]
 
 [tool.uv]
