@@ -2,20 +2,27 @@
   /**
    * Root application component — SPA router shell.
    *
-   * Module 002 / Task T-022.
+   * Module 010 / Task T-003 (rewires module 002 T-022 to mount AppShell
+   * for authed routes; onboarding stays bare to own the viewport).
    *
    * Boot sequence:
    *   1. Calls authStore.init() to load the JWT from IndexedDB.
-   *   2. Routes to /today if authenticated, else /onboarding.
+   *   2. Routes to /today (or honors deep-link hash) if authenticated,
+   *      else /onboarding.
    *
    * Window events handled:
    *   auth:navigate  – navigates to event.detail.path (fired by child routes)
-   *   auth:logout    – navigates to /onboarding (fired by the API interceptor)
+   *   auth:logout    – navigates to /onboarding (fired by API interceptor +
+   *                    the Settings sign-out button)
    */
+  import './lib/theme-tokens.css';
   import { onMount } from 'svelte';
   import { authStore } from './lib/auth-store.svelte';
+  import AppShell from './lib/components/AppShell.svelte';
   import { router } from './lib/router.svelte';
+  import Me from './routes/me.svelte';
   import Onboarding from './routes/onboarding.svelte';
+  import Settings from './routes/settings.svelte';
   import Today from './routes/today.svelte';
   import Vote from './routes/vote.svelte';
 
@@ -33,7 +40,15 @@
 
     // Boot: load persisted JWT, then route accordingly.
     void authStore.init().then(() => {
-      router.navigate(authStore.jwt ? '/today' : '/onboarding');
+      if (!authStore.jwt) {
+        router.navigate('/onboarding');
+      } else {
+        // Honor a deep-link hash when present; otherwise default to /today.
+        router.syncFromHash();
+        if (router.current === '/' || router.current === '/onboarding') {
+          router.navigate('/today');
+        }
+      }
       initialized = true;
     });
 
@@ -45,11 +60,19 @@
 </script>
 
 {#if initialized}
-  {#if router.current === '/vote'}
-    <Vote />
-  {:else if router.current === '/today'}
-    <Today />
-  {:else}
+  {#if router.current === '/onboarding'}
     <Onboarding />
+  {:else}
+    <AppShell>
+      {#if router.current === '/vote'}
+        <Vote />
+      {:else if router.current === '/me'}
+        <Me />
+      {:else if router.current === '/settings'}
+        <Settings />
+      {:else}
+        <Today />
+      {/if}
+    </AppShell>
   {/if}
 {/if}
