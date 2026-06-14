@@ -1,0 +1,24 @@
+=== BIBLE DE LA TEMPORADA: {{ season.title }} ===
+{{ season.bible_json | tojson }}
+
+=== CAPÍTULOS RECIENTES (contexto) ===
+{% for c in recent_chapters %}
+- Día {{ c.day_index }} — {{ c.title }}: {{ c.synopsis }}
+  Cliffhanger: {{ c.cliffhanger }}
+{% endfor %}
+
+=== CAPÍTULO ACTUAL (a continuar) ===
+Día {{ current_chapter.day_index }} — {{ current_chapter.title }}
+Synopsis: {{ current_chapter.synopsis }}
+Cliffhanger: {{ current_chapter.cliffhanger }}
+
+{% if winner_content %}
+=== PROPUESTA GANADORA (giro a incorporar) ===
+{{ winner_content }}
+
+{% endif %}
+=== TU TAREA ===
+Escribí el capítulo {{ next_day_index }} de la temporada.
+{% if winner_content %}Incorporá la propuesta ganadora como giro central.{% else %}Continuá la trama autónomamente desde el cliffhanger.{% endif %}
+
+Devolvé el JSON.
