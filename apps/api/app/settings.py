@@ -146,6 +146,23 @@ class Settings(BaseSettings):
     # past this fall back to placeholder.
     generation_deadline_s: float = 600.0
 
+    # ── Module 011 (web push) ──────────────────────────────────────────────
+    # VAPID identity. Both required for the real fan-out side-effect.
+    # Missing either keeps the no-op stub registered so the FSM still
+    # transitions through ESTRENO cleanly.
+    vapid_private_key: str | None = None
+    vapid_public_key: str | None = None
+    vapid_subject: str = "mailto:operator@aiplottwist.example"
+    # Wall-clock deadline for one fan-out across all subscriptions.
+    # Beyond this any in-flight send is cancelled and the row gets
+    # left untouched for the next tick.
+    push_fanout_timeout_s: float = 60.0
+    # Bounded parallel sends per fan-out (asyncio.Semaphore size).
+    push_fanout_concurrency: int = 8
+    # Subscriptions with failure_count >= threshold AND no recent
+    # success are culled at the end of every fan-out (R-005).
+    push_failure_threshold: int = 3
+
     # ── Derived helpers ──────────────────────────────────────────────────────
 
     @property

@@ -113,7 +113,23 @@ async def generation_pipeline_stub(chapter_id: int) -> None:
     )
 
 
+async def push_fanout_stub(chapter_id: int) -> None:
+    """Stub: no-op push-fan-out side effect.
+
+    Logs that it would run, then returns immediately. The real
+    implementation (module 011) fans the chapter notification out to
+    every active push_subscriptions row. The stub keeps the FSM happy
+    when VAPID keys are absent (local dev, staging).
+    """
+    logger.info(
+        "push_fanout_stub chapter_id=%d  "
+        "(stub — real impl injected by module 011)",
+        chapter_id,
+    )
+
+
 # Register stubs at import time.
-# Modules 006/008 override these by calling register() during their own init.
+# Modules 006/008/011 override these by calling register() during their init.
 register("director_filter", director_filter_stub)
 register("generation_pipeline", generation_pipeline_stub)
+register("push_fanout", push_fanout_stub)
