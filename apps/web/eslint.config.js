@@ -67,8 +67,8 @@ export default [
     },
   },
   {
-    // Build / tooling configs run on Node.
-    files: ["*.config.{js,ts}", "*.config.*.{js,ts}"],
+    // Build / tooling configs + Node scripts run on Node.
+    files: ["*.config.{js,ts}", "*.config.*.{js,ts}", "scripts/**/*.{js,mjs,ts}"],
     languageOptions: {
       globals: {
         ...globals.node,

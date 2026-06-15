@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "check": "svelte-check --tsconfig ./tsconfig.json && eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "audit:bundle": "node scripts/bundle-audit.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.44.0",

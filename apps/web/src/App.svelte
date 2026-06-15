@@ -21,13 +21,13 @@
   import AppShell from './lib/components/AppShell.svelte';
   import ErrorBoundary from './lib/components/ErrorBoundary.svelte';
   import IosInstallSheet from './lib/components/IosInstallSheet.svelte';
+  import LazyRoute from './lib/components/LazyRoute.svelte';
   import SwUpdateToast from './lib/components/SwUpdateToast.svelte';
   import { router } from './lib/router.svelte';
-  import Me from './routes/me.svelte';
+  // Eager: onboarding (auth landing) + today (most common landing after auth).
+  // Lazy via LazyRoute: vote / me / settings — code-split per FR-006 budget.
   import Onboarding from './routes/onboarding.svelte';
-  import Settings from './routes/settings.svelte';
   import Today from './routes/today.svelte';
-  import Vote from './routes/vote.svelte';
 
   /** Tracks whether the async boot sequence has completed. */
   let initialized = $state(false);
@@ -83,11 +83,11 @@
     <AppShell>
       <ErrorBoundary>
         {#if router.current === '/vote'}
-          <Vote />
+          <LazyRoute loader={() => import('./routes/vote.svelte')} />
         {:else if router.current === '/me'}
-          <Me />
+          <LazyRoute loader={() => import('./routes/me.svelte')} />
         {:else if router.current === '/settings'}
-          <Settings />
+          <LazyRoute loader={() => import('./routes/settings.svelte')} />
         {:else}
           <Today />
         {/if}
