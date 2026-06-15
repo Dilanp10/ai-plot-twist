@@ -64,7 +64,9 @@ function _urlBase64ToUint8Array(base64String: string): Uint8Array {
     .replace(/-/g, '+')
     .replace(/_/g, '/');
   const rawData = atob(base64);
-  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  const output = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) output[i] = rawData.charCodeAt(i);
+  return output;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +141,7 @@ export const pushStore = {
     try {
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey,
+        applicationServerKey: applicationServerKey as BufferSource,
       });
     } catch {
       return;

@@ -2,42 +2,28 @@
   /**
    * /settings — preferences + sign-out (FR-005).
    *
-   * Module 010 / Task T-007.
+   * Module 010 / Task T-007.  Push toggle wired in module 011 / T-012.
    *
    * Surfaces:
    *   - Display name (read-only).
-   *   - Notifications toggle — UI stub. Real plumbing lands with
-   *     module 011 (web-push); we honor the browser's
-   *     ``Notification.permission`` state for display only.
+   *   - Notifications toggle — PushToggle component (module 011).
    *   - App version.
    *   - Sign-out — with a Spanish confirmation dialog (FR-005).
    */
+  import { onMount } from 'svelte';
   import { authStore } from '../lib/auth-store.svelte';
+  import PushToggle from '../lib/components/PushToggle.svelte';
+  import { pushStore } from '../lib/push-store.svelte';
   import { signOut } from '../lib/sign-out';
   import { S } from '../lib/strings';
   import { VERSION } from '../lib/version';
 
-  // Browsers without Notification API (older iOS Safari, in-app browsers)
-  // never expose Notification — fall back to "default" so the toggle
-  // renders as off rather than crashing.
-  function permState(): 'default' | 'granted' | 'denied' {
-    if (typeof Notification === 'undefined') return 'default';
-    return Notification.permission;
-  }
-
-  let notifGranted = $state<boolean>(permState() === 'granted');
   let confirming = $state(false);
   let busy = $state(false);
 
-  async function onNotifChange(): Promise<void> {
-    // T-007 ships only the toggle UX. The real subscribe / unsubscribe
-    // flow is wired in module 011 (T-005..T-009 of that module).
-    if (typeof Notification === 'undefined') return;
-    if (notifGranted && Notification.permission !== 'granted') {
-      const result = await Notification.requestPermission();
-      notifGranted = result === 'granted';
-    }
-  }
+  onMount(() => {
+    void pushStore.init();
+  });
 
   async function confirmSignOut(): Promise<void> {
     busy = true;
@@ -58,18 +44,7 @@
     <span class="value">{authStore.user?.display_name ?? '—'}</span>
   </div>
 
-  <label class="row toggle">
-    <span class="label">
-      <span class="label-main">{S.settings.notifications}</span>
-      <span class="label-hint">{S.settings.notificationsHint}</span>
-    </span>
-    <input
-      type="checkbox"
-      bind:checked={notifGranted}
-      onchange={onNotifChange}
-      aria-label={S.settings.notifications}
-    />
-  </label>
+  <PushToggle />
 
   <p class="version">{S.settings.appVersion(VERSION)}</p>
 
@@ -125,29 +100,6 @@
     align-items: center;
     padding: var(--space-3) 0;
     border-bottom: 1px solid var(--color-border);
-  }
-
-  .toggle {
-    cursor: pointer;
-  }
-
-  .label {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .label-main {
-    color: var(--color-text);
-    font-size: var(--font-size-md);
-    font-weight: 500;
-  }
-
-  .label-hint {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-xs);
   }
 
   .value {

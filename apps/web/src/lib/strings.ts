@@ -69,6 +69,13 @@ export const S = {
     appVersion: (v: string) => `Versión ${v}`,
   },
 
+  push: {
+    enable: 'Activar',
+    disable: 'Desactivar',
+    saving: 'Guardando…',
+    blocked: 'Bloqueadas',
+  },
+
   install: {
     androidTitle: 'Sumá AI Plot Twist a tu inicio',
     androidBody: 'Andá a la app cuando se estrena el capítulo, en un toque.',
