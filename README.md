@@ -75,23 +75,20 @@ Variantes por lado: `pnpm test:api`, `pnpm test:web`, `pnpm check:api`, `pnpm ch
 
 ## Deploy
 
-### Backend → Fly.io (región `gru`)
+Guía end-to-end (Fly.io + Cloudflare Pages + GH Actions cron + Android smoke): **[`docs/DEPLOY.md`](./docs/DEPLOY.md)**.
+
+Resumen:
 
 ```sh
-fly auth login
-fly apps create ai-plot-twist
-fly secrets set \
-  DATABASE_URL="<neon-connection-string>" \
-  TICK_SECRET="<random-32-bytes-base64>" \
-  JWT_SECRET="<random-32-bytes-base64>"
+# Backend (desde repo root)
 fly deploy --config infra/fly.toml
+
+# Frontend: conectar el repo desde el dashboard de Cloudflare Pages.
+# Build command: pnpm install --frozen-lockfile && pnpm --filter ./apps/web build
+# Output dir:    apps/web/dist
 ```
 
-### Frontend → Cloudflare Pages
-
-Se conecta el repo desde el dashboard de Cloudflare. Build command: `pnpm --filter ./apps/web build`. Output dir: `apps/web/dist`.
-
-Walkthrough completo con troubleshooting: [`specs/001-project-bootstrap/quickstart.md`](./specs/001-project-bootstrap/quickstart.md).
+Lista completa de env vars: [`.env.example`](./.env.example).
 
 ---
 
