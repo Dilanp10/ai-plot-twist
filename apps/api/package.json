@@ -17,6 +17,7 @@
     "replay-tick": "uv run python -m app.scripts.replay_tick",
     "kill-switch": "uv run python -m app.scripts.kill_switch",
     "rerun-filter": "uv run python -m app.scripts.rerun_filter",
-    "rerun-generation": "uv run python -m app.scripts.rerun_generation"
+    "rerun-generation": "uv run python -m app.scripts.rerun_generation",
+    "generate-vapid": "uv run python -m app.scripts.generate_vapid"
   }
 }

@@ -33,7 +33,8 @@
     "replay-tick": "pnpm --filter ./apps/api replay-tick --",
     "kill-switch": "pnpm --filter ./apps/api kill-switch --",
     "rerun-filter": "pnpm --filter ./apps/api rerun-filter --",
-    "rerun-generation": "pnpm --filter ./apps/api rerun-generation --"
+    "rerun-generation": "pnpm --filter ./apps/api rerun-generation --",
+    "generate-vapid": "pnpm --filter ./apps/api generate-vapid --"
   },
   "devDependencies": {
     "concurrently": "^9.0.0",

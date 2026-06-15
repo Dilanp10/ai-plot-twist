@@ -335,6 +335,130 @@ async def test_0008_upgrade_then_downgrade() -> None:
     assert final["votes"]
 
 
+async def test_0009_upgrade_then_downgrade() -> None:
+    """Round-trip x2 for 0009: push_subscriptions appears and disappears cleanly."""
+    from tests.conftest import _is_placeholder_database_url
+
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url or _is_placeholder_database_url(database_url):
+        pytest.skip("DATABASE_URL no apunta a una base real.")
+
+    cfg = _alembic_config(database_url)
+
+    for cycle_idx in range(2):
+        await asyncio.to_thread(command.upgrade, cfg, "head")
+
+        present = await _tables_exist(database_url, "push_subscriptions")
+        assert present["push_subscriptions"], (
+            f"ciclo {cycle_idx}: push_subscriptions debería existir tras upgrade"
+        )
+
+        await asyncio.to_thread(command.downgrade, cfg, "base")
+
+        gone = await _tables_exist(database_url, "push_subscriptions")
+        assert not gone["push_subscriptions"], (
+            f"ciclo {cycle_idx}: push_subscriptions debería estar borrada tras downgrade"
+        )
+
+    # Leave DB ready for subsequent tests.
+    await asyncio.to_thread(command.upgrade, cfg, "head")
+    final = await _tables_exist(database_url, "push_subscriptions")
+    assert final["push_subscriptions"]
+
+
+async def test_0009_unique_endpoint_enforced() -> None:
+    """``push_subscriptions.endpoint`` UNIQUE rejects duplicates."""
+    from tests.conftest import _is_placeholder_database_url
+
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url or _is_placeholder_database_url(database_url):
+        pytest.skip("DATABASE_URL no apunta a una base real.")
+
+    cfg = _alembic_config(database_url)
+    await asyncio.to_thread(command.upgrade, cfg, "head")
+
+    engine = create_async_engine(database_url)
+    factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
+        engine, expire_on_commit=False
+    )
+    user_id: int = -1
+    # Matches ck_invites_code_format: ^[A-Z2-7]{4}-[A-Z2-7]{4}$
+    # (RFC 4648 base32 — digits 2-7 only, no 0/1/8/9).
+    invite_code = "MIGN-PUSH"
+    try:
+        # Seed FK targets: invite first (UNIQUE PRIMARY), then user.
+        async with factory() as s:
+            await s.execute(
+                sa.text(
+                    "INSERT INTO invites (code, issued_by, expires_at, status, note) "
+                    "VALUES (:code, 'mig-test', now() + interval '7 days', "
+                    "'unused', 'mig9')"
+                ),
+                {"code": invite_code},
+            )
+            await s.execute(
+                sa.text(
+                    "INSERT INTO users (public_id, display_name, invite_code, "
+                    "device_token) "
+                    "VALUES (gen_random_uuid(), 'mig-test-9-user', :code, "
+                    "'mig9' || repeat('0', 60))"
+                ),
+                {"code": invite_code},
+            )
+            user_id = int(
+                (
+                    await s.execute(
+                        sa.text(
+                            "SELECT id FROM users WHERE display_name = 'mig-test-9-user'"
+                        )
+                    )
+                ).scalar_one()
+            )
+            await s.commit()
+
+        endpoint = "https://push.example/abc-mig9"
+        async with factory() as s:
+            await s.execute(
+                sa.text(
+                    "INSERT INTO push_subscriptions "
+                    "(user_id, endpoint, p256dh_key, auth_key) "
+                    "VALUES (:uid, :ep, 'pk', 'ak')"
+                ),
+                {"uid": user_id, "ep": endpoint},
+            )
+            await s.commit()
+
+        async with factory() as s:
+            with pytest.raises(sa.exc.IntegrityError):
+                await s.execute(
+                    sa.text(
+                        "INSERT INTO push_subscriptions "
+                        "(user_id, endpoint, p256dh_key, auth_key) "
+                        "VALUES (:uid, :ep, 'pk2', 'ak2')"
+                    ),
+                    {"uid": user_id, "ep": endpoint},
+                )
+                await s.commit()
+    finally:
+        async with factory() as s:
+            await s.execute(
+                sa.text(
+                    "DELETE FROM push_subscriptions WHERE user_id = :uid"
+                ),
+                {"uid": user_id},
+            )
+            await s.execute(
+                sa.text("DELETE FROM users WHERE id = :uid"),
+                {"uid": user_id},
+            )
+            await s.execute(
+                sa.text("DELETE FROM invites WHERE code = :code"),
+                {"code": invite_code},
+            )
+            await s.commit()
+        await engine.dispose()
+
+
 async def test_0005_uniq_st_trigger_enforced() -> None:
     """Inserting the same (cycle_id, to_state, trigger_id) twice raises IntegrityError.
 
