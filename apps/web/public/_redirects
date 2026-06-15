@@ -1,0 +1,10 @@
+# Cloudflare Pages routing rules.
+#
+# 1) Proxy API calls to the Fly.io backend.  The web client uses
+#    relative paths like fetch('/api/v1/...') so Pages must rewrite
+#    them to the API origin.  Status 200 = proxy (not redirect).
+/api/*  https://ai-plot-twist.fly.dev/api/:splat  200
+
+# 2) SPA fallback — every non-matching route returns index.html so
+#    the Svelte client-side router can render it.
+/*  /index.html  200
