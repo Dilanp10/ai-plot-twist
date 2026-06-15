@@ -127,7 +127,7 @@ class TimeFenceViolation(Exception):
 _EDGE: dict[tuple[str, str], tuple[str | None, dict[str, Any]]] = {
     # ── main happy-path loop ──────────────────────────────────────────────
     ("PENDING_RELEASE", "ESTRENO"): (
-        None,
+        "push_fanout",
         {"chapter_status": "live", "chapter_released_at": "now"},
     ),
     ("ESTRENO", "RECEPCION_IDEAS"): (None, {}),

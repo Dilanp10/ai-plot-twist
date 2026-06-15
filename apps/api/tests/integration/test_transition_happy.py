@@ -154,7 +154,7 @@ async def test_pending_release_to_estreno_applied(session: AsyncSession) -> None
 
     Verifies:
     - result.status == "applied"
-    - result.side_effect_name is None  (no side effect for this edge)
+    - result.side_effect_name == "push_fanout"  (module 011 T-010)
     - cycle.state == "ESTRENO" in DB
     - chapter.status == "live" and released_at is not None
     - state_transitions row exists with correct fields
@@ -175,7 +175,7 @@ async def test_pending_release_to_estreno_applied(session: AsyncSession) -> None
         assert result.cycle_id == cycle_id
         assert result.chapter_id == chapter_id
         assert result.transition_id is not None
-        assert result.side_effect_name is None
+        assert result.side_effect_name == "push_fanout"
         assert result.applied_at is not None
 
         # Cycle state updated in DB.

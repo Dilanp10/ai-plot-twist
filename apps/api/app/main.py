@@ -42,9 +42,11 @@ from app.db import dispose_engine, get_session_factory
 from app.domain import side_effects
 from app.domain.director_filter import build_director_filter_side_effect
 from app.domain.generation_pipeline import build_generation_pipeline_side_effect
+from app.domain.push_fanout import build_push_fanout_side_effect
 from app.domain.scriptwriter import Scriptwriter
 from app.errors import ProblemDetail, problem_handler
 from app.infra.r2_uploader import R2Uploader
+from app.infra.webpush_sender import WebPushSender
 from app.logging import configure_logging, get_logger
 from app.middleware.request_id import RequestIdMiddleware
 from app.providers.image import ImageProviderRouter, chain_for_env
@@ -94,6 +96,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     _wire_director_filter(app, settings)
     _wire_generation_pipeline(app, settings)
+    _wire_push_fanout(app, settings)
 
     try:
         yield
@@ -284,6 +287,42 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
         image_chain=settings.generation_image_chain_env,
         image_providers=image_router.provider_names,
     )
+
+
+def _wire_push_fanout(app: FastAPI, settings: Settings) -> None:
+    """Register the real push_fanout side-effect when VAPID keys are present.
+
+    If keys are missing the no-op stub registered by
+    :mod:`app.domain.push_fanout` stays in place so the FSM still
+    transitions through ESTRENO without sending any pushes (useful for
+    staging without VAPID credentials).
+    """
+    if not settings.vapid_private_key or not settings.vapid_public_key:
+        _log.warning(
+            "push_fanout_missing_vapid_keys",
+            detail=(
+                "VAPID_PRIVATE_KEY or VAPID_PUBLIC_KEY is not set; "
+                "push_fanout remains a no-op stub. "
+                "Run `pnpm generate-vapid` and set the keys to enable Web Push."
+            ),
+        )
+        return
+
+    sender = WebPushSender(
+        vapid_private_key=settings.vapid_private_key,
+        vapid_subject=settings.vapid_subject,
+    )
+    app.state.push_sender = sender
+
+    real_side_effect = build_push_fanout_side_effect(
+        get_session_factory(),
+        sender,
+        timeout_s=settings.push_fanout_timeout_s,
+        threshold=settings.push_failure_threshold,
+        concurrency=settings.push_fanout_concurrency,
+    )
+    side_effects.register("push_fanout", real_side_effect)
+    _log.info("side_effect_registered", name="push_fanout")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

@@ -85,12 +85,17 @@ See `docs/adr/0001-spanish-fsm-state-names.md`.
 
 ## Gate 7 — Soft Delete on User Content
 
-- [ ] Are all user-authored entities (twists, votes, push subscriptions) deleted by
+- [ ] Are all user-authored entities (twists, votes) deleted by
       flag/status (`deleted_by_user`, `deleted_at`) rather than `DELETE FROM`?
 - [ ] Is the soft-delete state explicitly excluded from public reads?
 
 **Rationale**: Audit trail + abuse investigation + accidental-delete recovery during
 closed beta.
+
+**Carve-out (ADR-0007)**: `push_subscriptions` rows are **hard-deleted**.
+They are technical infrastructure (revoked endpoint credentials), not
+user-authored content. Retaining dead endpoints has no audit value and causes
+silent fan-out failures. See `docs/adr/0007-push-subscription-hard-delete.md`.
 
 ## Gate 8 — Tests from Day One
 
