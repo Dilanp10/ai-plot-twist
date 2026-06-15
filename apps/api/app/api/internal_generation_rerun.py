@@ -161,6 +161,12 @@ async def _delete_existing_next_chapter(
     ``UNIQUE(season_id, day_index)``. The row is deleted *after* the
     cycle column is cleared, so the FK does not block the DELETE.
     No-op when the cycle has no pending next chapter.
+
+    Does NOT commit — the caller's pipeline owns the transaction
+    boundary. If :func:`run_generation_pipeline` raises before its own
+    commit (e.g. scriptwriter exhausts every LLM provider), the DELETE
+    is rolled back along with everything else, leaving the cycle's
+    original ``next_chapter_id`` intact.
     """
     row = (
         await session.execute(
@@ -187,7 +193,6 @@ async def _delete_existing_next_chapter(
         sa.text("DELETE FROM chapters WHERE id = :ncid"),
         {"ncid": int(old_next)},
     )
-    await session.commit()
 
 
 # ---------------------------------------------------------------------------

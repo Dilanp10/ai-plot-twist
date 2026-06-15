@@ -140,6 +140,20 @@ async def post_client_log(
             detail=f"El cuerpo supera el límite de {_MAX_BODY_BYTES} bytes.",
         )
 
+    # Validate BEFORE incrementing the rate-limit bucket. Malformed JSON
+    # is cheap to reject (4 KB cap upstream); making it burn the per-IP
+    # budget would let an attacker DoS legitimate error reports from the
+    # same egress IP with a flood of garbage.
+    try:
+        payload = ClientLogPayload.model_validate_json(raw)
+    except ValidationError as exc:
+        raise ProblemDetail(
+            status=422,
+            code="invalid_payload",
+            title="Payload inválido",
+            detail=str(exc),
+        ) from None
+
     ip = _get_ip(request)
     rate_repo = RateLimitRepo(session)
     try:
@@ -156,16 +170,6 @@ async def post_client_log(
             headers={"Retry-After": str(_retry_after_seconds())},
         ) from None
     await session.commit()
-
-    try:
-        payload = ClientLogPayload.model_validate_json(raw)
-    except ValidationError as exc:
-        raise ProblemDetail(
-            status=422,
-            code="invalid_payload",
-            title="Payload inválido",
-            detail=str(exc),
-        ) from None
 
     _log.info(
         "client_log_received",

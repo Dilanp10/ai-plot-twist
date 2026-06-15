@@ -42,18 +42,30 @@
     window.addEventListener('auth:logout', onLogout);
 
     // Boot: load persisted JWT, then route accordingly.
-    void authStore.init().then(() => {
-      if (!authStore.jwt) {
-        router.navigate('/onboarding');
-      } else {
-        // Honor a deep-link hash when present; otherwise default to /today.
-        router.syncFromHash();
-        if (router.current === '/' || router.current === '/onboarding') {
-          router.navigate('/today');
+    //
+    // If authStore.init() rejects (IDB blocked in private mode, schema
+    // corruption), fall through to /onboarding — better to make the user
+    // re-redeem their invite code than to render a blank screen forever.
+    void authStore
+      .init()
+      .then(() => {
+        if (!authStore.jwt) {
+          router.navigate('/onboarding');
+        } else {
+          // Honor a deep-link hash when present; otherwise default to /today.
+          router.syncFromHash();
+          if (router.current === '/' || router.current === '/onboarding') {
+            router.navigate('/today');
+          }
         }
-      }
-      initialized = true;
-    });
+      })
+      .catch((err: unknown) => {
+        console.error('authStore.init() failed', err);
+        router.navigate('/onboarding');
+      })
+      .finally(() => {
+        initialized = true;
+      });
 
     return () => {
       window.removeEventListener('auth:navigate', onNavigate);
