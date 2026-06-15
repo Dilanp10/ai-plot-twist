@@ -1,0 +1,58 @@
+name: Lighthouse CI
+
+# Builds the PWA, serves it via `pnpm preview`, and runs Lighthouse CI
+# against the local URL with the budgets declared in `.lighthouserc.json`:
+#   perf ≥ 85, a11y ≥ 95, PWA ≥ 90 (FR-006).
+#
+# Runs on push to main + on pull_request. Failing a budget marks the
+# check red and the PR cannot merge until the regression is fixed.
+#
+# Doesn't depend on a Cloudflare Pages preview URL — we exercise the
+# exact same `dist/` that ships, served locally, throttled by Lighthouse
+# at mobile-Slow-4G defaults. Adds a Pages preview URL later as a
+# secondary collect target when the deploy bot is wired.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - ".lighthouserc.json"
+      - ".github/workflows/lighthouse-ci.yml"
+
+jobs:
+  lighthouse:
+    name: Lighthouse — perf / a11y / PWA budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install web deps
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build PWA
+        working-directory: apps/web
+        run: pnpm build
+
+      - name: Audit bundle budgets
+        working-directory: apps/web
+        run: pnpm audit:bundle
+
+      - name: Run Lighthouse CI
+        run: npx --yes @lhci/cli@0.14.x autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
