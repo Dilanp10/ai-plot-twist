@@ -31,8 +31,10 @@ from app.api.internal_director_replay import router as internal_director_replay_
 from app.api.internal_generation_rerun import router as internal_generation_rerun_router
 from app.api.internal_health_cycle import router as internal_health_cycle_router
 from app.api.internal_kill_switch import router as internal_kill_switch_router
+from app.api.internal_push_test import router as internal_push_test_router
 from app.api.internal_transition import router as internal_transition_router
 from app.api.me_twists import router as me_twists_router
+from app.api.push import router as push_router
 from app.api.seasons import router as seasons_router
 from app.api.twists import router as twists_router
 from app.api.voting import router as voting_router
@@ -324,7 +326,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(internal_director_replay_router)
     app.include_router(internal_generation_rerun_router)
     app.include_router(internal_client_log_router)
+    app.include_router(internal_push_test_router)
     app.include_router(auth_router)
+    app.include_router(push_router)
     app.include_router(chapters_router)
     app.include_router(seasons_router)
     app.include_router(twists_router)
