@@ -25,9 +25,12 @@ signal. The router still benefits from the typed exceptions above.
 
 from __future__ import annotations
 
+import logging
 import time
 
 import httpx
+
+logger = logging.getLogger(__name__)
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
@@ -126,6 +129,13 @@ class GeminiProvider(LLMProvider):
             )
         except genai_errors.ClientError as exc:
             status = _extract_status(exc)
+            # Log the full exception body so we can debug spec drift /
+            # auth issues without re-deploying just to add prints.
+            logger.warning(
+                "gemini_client_error status=%s body=%s",
+                status,
+                str(exc)[:1000],
+            )
             if status == 429:
                 raise LLMProviderRateLimited(
                     f"gemini rate-limited (status={status}): {exc}"
