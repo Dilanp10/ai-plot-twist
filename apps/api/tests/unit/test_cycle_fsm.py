@@ -107,7 +107,8 @@ class TestLegalTransitions:
     def test_pending_release_to_estreno(self) -> None:
         plan = self._plan("PENDING_RELEASE", "ESTRENO")
         assert plan.to == "ESTRENO"
-        assert plan.side_effect is None
+        # module 011 T-010 wires push_fanout on chapter release.
+        assert plan.side_effect == "push_fanout"
         assert plan.state_updates["chapter_status"] == "live"
         assert plan.state_updates["chapter_released_at"] == "now"
 
@@ -368,10 +369,11 @@ class TestNaiveDatetimes:
 
 
 class TestTransitionPlanContent:
-    def test_side_effect_only_on_filtering_and_generacion_entries(self) -> None:
-        """director_filter and generation_pipeline are the only side effects."""
+    def test_side_effect_only_on_known_edges(self) -> None:
+        """director_filter (RECEPCION_IDEAS→FILTERING),
+        generation_pipeline (VOTACION→GENERACION), and push_fanout
+        (PENDING_RELEASE→ESTRENO, module 011 T-010) are the only side effects."""
         non_effect_transitions = [
-            ("PENDING_RELEASE", "ESTRENO"),
             ("ESTRENO", "RECEPCION_IDEAS"),
             ("FILTERING", "VOTACION"),
             ("FILTERING", "FAILED"),
@@ -384,6 +386,11 @@ class TestTransitionPlanContent:
             assert plan.side_effect is None, (
                 f"Expected no side effect for {from_s}→{to_s}, got {plan.side_effect!r}"
             )
+
+    def test_push_fanout_only_on_pending_release_to_estreno(self) -> None:
+        entered = _entered_long_ago("PENDING_RELEASE")
+        plan = compute("PENDING_RELEASE", "ESTRENO", entered, _now(), skip_dwell=True)
+        assert plan.side_effect == "push_fanout"
 
     def test_director_filter_only_on_recepcion_ideas_to_filtering(self) -> None:
         entered = _entered_long_ago("RECEPCION_IDEAS")
