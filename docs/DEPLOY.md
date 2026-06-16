@@ -170,8 +170,8 @@ Abrir `https://<pages-url>` en Chrome desktop:
 Los 5 workflows en `.github/workflows/tick-*.yml` necesitan dos secrets en el repo:
 
 ```
-TICK_SECRET   ← el mismo valor que en Fly.io
-API_BASE_URL  ← https://ai-plot-twist.fly.dev
+TICK_SECRET  ← el mismo valor que en Fly.io
+API_URL      ← https://ai-plot-twist.fly.dev
 ```
 
 Setearlos en **Settings → Secrets and variables → Actions**.
