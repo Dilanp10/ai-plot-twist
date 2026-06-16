@@ -90,11 +90,20 @@ class GeminiProvider(LLMProvider):
                     name = ref.rsplit("/", 1)[-1]
                     target = defs.get(name, {})
                     return _inline_and_strip(target)
-                return {
-                    k: _inline_and_strip(v)
-                    for k, v in obj.items()
-                    if k not in ("additionalProperties", "title", "$defs")
-                }
+                cleaned: dict[str, object] = {}
+                for k, v in obj.items():
+                    if k in ("additionalProperties", "$defs"):
+                        continue
+                    # `title` at the schema level is JSON-Schema metadata
+                    # that Gemini rejects. But `title` can ALSO appear as
+                    # a key inside `properties` (when the Pydantic model
+                    # has a field called `title`). Tell them apart by the
+                    # value type: metadata-title is a string; property-
+                    # definition is a dict.
+                    if k == "title" and not isinstance(v, dict):
+                        continue
+                    cleaned[k] = _inline_and_strip(v)
+                return cleaned
             if isinstance(obj, list):
                 return [_inline_and_strip(x) for x in obj]
             return obj
