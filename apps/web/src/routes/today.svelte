@@ -91,26 +91,9 @@
     {@const dto = chapterStore.data}
     <header class="meta">
       <span class="badge" data-testid="state-badge">{stateBadge(dto.cycle_state)}</span>
-      <h1>{dto.chapter.title}</h1>
-      <p class="day">Día {dto.chapter.day_index} · {dto.season.title}</p>
-      <p class="synopsis">{dto.chapter.synopsis}</p>
+      <h1>Ideas</h1>
+      <p class="day">{dto.season.title} · Cap. {dto.chapter.day_index}</p>
     </header>
-
-    <section class="panels">
-      {#each dto.chapter.panels as panel (panel.idx)}
-        <figure class="panel">
-          <img
-            src={panel.image_url}
-            alt={panel.narration}
-            loading="lazy"
-            data-testid="panel-image"
-          />
-          <figcaption>{panel.narration}</figcaption>
-        </figure>
-      {/each}
-    </section>
-
-    <p class="cliffhanger">{dto.chapter.cliffhanger}</p>
 
     {@const cd = windowFor(dto.cycle_state, dto.windows)}
     <div class="countdown-wrap">
@@ -219,47 +202,6 @@
     color: #666;
     font-size: 0.9rem;
     margin: 0;
-  }
-
-  .synopsis {
-    color: #444;
-    margin: 1rem 0 0;
-  }
-
-  .panels {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin: 1.5rem 0;
-  }
-
-  .panel {
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .panel img {
-    width: 100%;
-    height: auto;
-    border-radius: 0.5rem;
-    background: #f0f0f0;
-  }
-
-  .panel figcaption {
-    color: #333;
-    font-size: 0.95rem;
-    line-height: 1.4;
-  }
-
-  .cliffhanger {
-    font-style: italic;
-    text-align: center;
-    margin: 2rem auto;
-    font-size: 1.1rem;
-    color: #1a1a2e;
-    max-width: 30em;
   }
 
   .countdown-wrap {
