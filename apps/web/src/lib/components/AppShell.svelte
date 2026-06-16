@@ -40,9 +40,17 @@
     display: flex;
     flex-direction: column;
     min-height: 100dvh;
-    background: var(--color-bg);
+    background:
+      radial-gradient(
+        ellipse at top,
+        rgba(255, 46, 99, 0.08) 0%,
+        transparent 50%
+      ),
+      var(--color-bg);
     color: var(--color-text);
     font-family: var(--font-body);
+    padding-left: var(--layout-safe-left);
+    padding-right: var(--layout-safe-right);
   }
 
   .content {

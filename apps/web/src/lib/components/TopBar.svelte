@@ -84,18 +84,30 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: var(--layout-topbar-height);
-    padding: 0 var(--space-4);
-    background: var(--color-surface);
+    height: calc(var(--layout-topbar-height) + var(--layout-safe-top));
+    padding: var(--layout-safe-top) var(--space-4) 0;
+    background: rgba(10, 10, 15, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--color-border);
-    box-shadow: var(--shadow-sm);
+  }
+
+  .brand {
+    background: linear-gradient(
+      135deg,
+      var(--color-accent) 0%,
+      #c084fc 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.02em;
   }
 
   .brand {
     font-family: var(--font-display);
     font-size: var(--font-size-lg);
-    font-weight: 600;
-    color: var(--color-text);
+    font-weight: 700;
   }
 
   .meta {

@@ -66,10 +66,19 @@
     align-items: stretch;
     height: calc(var(--layout-bottomnav-height) + var(--layout-safe-bottom));
     padding-bottom: var(--layout-safe-bottom);
-    background: var(--color-surface);
+    background: rgba(10, 10, 15, 0.9);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border-top: 1px solid var(--color-border);
-    box-shadow: var(--shadow-md);
     z-index: 10;
+  }
+
+  .tab.active .icon {
+    transform: scale(1.15);
+  }
+
+  .icon {
+    transition: transform var(--motion-fast) var(--motion-easing);
   }
 
   .tab {

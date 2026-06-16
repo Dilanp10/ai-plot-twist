@@ -13,32 +13,32 @@
  */
 
 :root {
-  /* ---- Colors (light, default) ---- */
-  --color-bg: #fafafa;
-  --color-surface: #ffffff;
-  --color-surface-elevated: #f5f5f5;
-  --color-border: #e5e5e5;
+  /* ---- Colors — dark mode always-on (TikTok-style immersive) ---- */
+  --color-bg: #0a0a0f;
+  --color-surface: #15151c;
+  --color-surface-elevated: #1f1f29;
+  --color-border: #2a2a36;
 
-  --color-text: #111111;
-  --color-text-muted: #555555;
-  --color-text-inverse: #ffffff;
+  --color-text: #f5f5f5;
+  --color-text-muted: #9ca0ac;
+  --color-text-inverse: #0a0a0f;
 
-  --color-accent: #6c4cff;
-  --color-accent-hover: #5a3bdb;
+  --color-accent: #ff2e63;
+  --color-accent-hover: #ff5582;
   --color-accent-text: #ffffff;
 
-  --color-success: #228b22;
-  --color-warning: #d97706;
-  --color-danger: #b91c1c;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-danger: #ef4444;
 
   /* ---- Cycle state badges ---- */
-  --color-state-estreno: #6c4cff;
-  --color-state-recepcion: #2563eb;
-  --color-state-filtering: #d97706;
-  --color-state-votacion: #16a34a;
-  --color-state-generacion: #6c4cff;
-  --color-state-pending: #555555;
-  --color-state-failed: #b91c1c;
+  --color-state-estreno: #ff2e63;
+  --color-state-recepcion: #38bdf8;
+  --color-state-filtering: #fbbf24;
+  --color-state-votacion: #4ade80;
+  --color-state-generacion: #c084fc;
+  --color-state-pending: #9ca0ac;
+  --color-state-failed: #ef4444;
 
   /* ---- Typography ---- */
   --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -72,10 +72,13 @@
   --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
 
   /* ---- Layout ---- */
-  --layout-max-width: 480px;
+  --layout-max-width: 520px;
   --layout-topbar-height: 56px;
   --layout-bottomnav-height: 64px;
+  --layout-safe-top: env(safe-area-inset-top, 0px);
   --layout-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --layout-safe-left: env(safe-area-inset-left, 0px);
+  --layout-safe-right: env(safe-area-inset-right, 0px);
 
   /* ---- Motion ---- */
   --motion-fast: 120ms;
@@ -83,37 +86,7 @@
   --motion-easing: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #0f0f10;
-    --color-surface: #1a1a1c;
-    --color-surface-elevated: #232326;
-    --color-border: #2c2c30;
-
-    --color-text: #f5f5f5;
-    --color-text-muted: #a0a0a0;
-    --color-text-inverse: #111111;
-
-    --color-accent: #8b6cff;
-    --color-accent-hover: #a08aff;
-    --color-accent-text: #0f0f10;
-
-    --color-success: #4ade80;
-    --color-warning: #fbbf24;
-    --color-danger: #ef4444;
-
-    --color-state-estreno: #8b6cff;
-    --color-state-recepcion: #60a5fa;
-    --color-state-filtering: #fbbf24;
-    --color-state-votacion: #4ade80;
-    --color-state-generacion: #8b6cff;
-    --color-state-pending: #a0a0a0;
-    --color-state-failed: #ef4444;
-
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
-    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.7);
-  }
-}
+/* Dark mode is now the only theme — keeping this block for future toggle. */
 
 @media (prefers-reduced-motion: reduce) {
   :root {
