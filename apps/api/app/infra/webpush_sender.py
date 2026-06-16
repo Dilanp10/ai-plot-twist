@@ -91,7 +91,10 @@ class WebPushSender:
             ``mailto:operator@example.com``. Must match the JWT ``sub``
             claim — push services reject mismatched JWTs.
         """
-        self._private_key = vapid_private_key
+        # Some secret stores (Fly.io secrets set via single-line CLI args)
+        # collapse PEM newlines to the literal two-char sequence "\n".
+        # Normalize back to real newlines so pywebpush/cryptography accepts it.
+        self._private_key = vapid_private_key.replace("\\n", "\n")
         self._claims: dict[str, str] = {"sub": vapid_subject}
 
     async def send(

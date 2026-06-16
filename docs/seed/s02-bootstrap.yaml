@@ -1,0 +1,49 @@
+# Ejemplo de manifiesto para pnpm bootstrap-cycle
+#
+# Uso:
+#   pnpm bootstrap-cycle -- --season s01 --day-zero-manifest docs/seed/example-cap0.yaml
+#
+# Todos los campos bajo "chapter.manifest" son libres; el script los almacena
+# tal cual en chapters.manifest_json.  La generación real (módulo 008) los usa
+# para producir el capítulo definitivo.
+
+# ── Datos de temporada ────────────────────────────────────────────────────────
+slug: s02
+title: "Season 01: El Despertar"
+started_on: "2026-06-15"   # opcional; si se omite, usa la fecha ART de hoy
+
+bible:
+  logline: >
+    Una adolescente descubre que los relatos de su ciudad se generan con IA
+    y decide hackear el sistema para contar su propia historia.
+  themes:
+    - identidad narrativa
+    - comunidad digital
+    - autoría colectiva
+  tone: drama con toques de ciencia ficción ligera
+  world_notes: >
+    La acción transcurre en una versión cercana de Buenos Aires (2027).
+    Las plataformas de contenido ya usan IA generativa de forma masiva;
+    los humanos curan y votan los giros argumentales.
+
+# ── Capítulo 0 (el bootstrap) ─────────────────────────────────────────────────
+# day_index=1 siempre.  status='ready' indica que puede liberarse en el
+# próximo tick ESTRENO.
+chapter:
+  title: "Capítulo 1: La Señal"
+  synopsis: >
+    Valentina recibe un mensaje cifrado en su feed.  Cuando lo decodifica,
+    descubre las coordenadas de un servidor oculto bajo la ciudad.
+  manifest:
+    panels: []           # sin paneles pre-generados; la IA los crea en GENERACION
+    theme: "inicio"
+    word_limit: 280
+    mood: intrigante
+    locations:
+      - "Microcentro, Buenos Aires"
+      - "Servidor subterráneo (desconocido)"
+    characters:
+      - name: "Valentina"
+        role: protagonist
+      - name: "El Sistema"
+        role: antagonist
