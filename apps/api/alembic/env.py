@@ -35,7 +35,10 @@ if config.config_file_name is not None:
 # Config object). Pulling from settings means production never has to put a
 # secret in alembic.ini, while tests can still override the URL.
 if not config.get_main_option("sqlalchemy.url"):
-    config.set_main_option("sqlalchemy.url", get_settings().database_url)
+    # Escape % → %% so configparser's interpolation doesn't choke on
+    # URL-encoded passwords (e.g. %23 for #).
+    db_url = get_settings().database_url.replace("%", "%%")
+    config.set_main_option("sqlalchemy.url", db_url)
 
 # No SQLAlchemy declarative model metadata exists yet. Module 002 will be the
 # first to import a shared MetaData object here so autogenerate diffs work.
