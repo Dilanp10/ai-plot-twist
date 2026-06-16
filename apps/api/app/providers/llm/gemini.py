@@ -166,6 +166,12 @@ class GeminiProvider(LLMProvider):
         try:
             content = response_schema.model_validate_json(text)
         except ValidationError as exc:
+            logger.warning(
+                "gemini_invalid_output schema=%s body=%s errors=%s",
+                response_schema.__name__,
+                text[:800],
+                str(exc)[:500],
+            )
             raise LLMProviderInvalidOutput(
                 f"gemini response did not match schema "
                 f"{response_schema.__name__}: {exc}"
