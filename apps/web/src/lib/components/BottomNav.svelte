@@ -24,13 +24,16 @@
   }
 
   const tabs: Tab[] = [
+    { path: '/series', label: S.appShell.nav.series, icon: '◈' },
     { path: '/today', label: S.appShell.nav.today, icon: '◌' },
-    { path: '/vote', label: S.appShell.nav.vote, icon: '▲' },
     { path: '/me', label: S.appShell.nav.me, icon: '✎' },
     { path: '/settings', label: S.appShell.nav.settings, icon: '⚙' },
   ];
 
   function isActive(path: string): boolean {
+    if (path === '/series') {
+      return router.current === '/series' || router.current.startsWith('/chapter/');
+    }
     return router.current === path;
   }
 

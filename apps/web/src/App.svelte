@@ -26,7 +26,9 @@
   import { router } from './lib/router.svelte';
   // Eager: onboarding (auth landing) + today (most common landing after auth).
   // Lazy via LazyRoute: vote / me / settings — code-split per FR-006 budget.
+  import Chapter from './routes/chapter.svelte';
   import Onboarding from './routes/onboarding.svelte';
+  import Series from './routes/series.svelte';
   import Today from './routes/today.svelte';
 
   /** Tracks whether the async boot sequence has completed. */
@@ -52,10 +54,10 @@
         if (!authStore.jwt) {
           router.navigate('/onboarding');
         } else {
-          // Honor a deep-link hash when present; otherwise default to /today.
+          // Honor a deep-link hash when present; otherwise default to /series.
           router.syncFromHash();
           if (router.current === '/' || router.current === '/onboarding') {
-            router.navigate('/today');
+            router.navigate('/series');
           }
         }
       })
@@ -82,14 +84,20 @@
   {:else}
     <AppShell>
       <ErrorBoundary>
-        {#if router.current === '/vote'}
+        {#if router.current === '/series'}
+          <Series />
+        {:else if router.current === '/today'}
+          <Today />
+        {:else if router.current.startsWith('/chapter/')}
+          <Chapter chapterId={router.current.slice('/chapter/'.length)} />
+        {:else if router.current === '/vote'}
           <LazyRoute loader={() => import('./routes/vote.svelte')} />
         {:else if router.current === '/me'}
           <LazyRoute loader={() => import('./routes/me.svelte')} />
         {:else if router.current === '/settings'}
           <LazyRoute loader={() => import('./routes/settings.svelte')} />
         {:else}
-          <Today />
+          <Series />
         {/if}
       </ErrorBoundary>
     </AppShell>

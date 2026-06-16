@@ -49,6 +49,7 @@ from app.infra.system_flags_repo import SystemFlagsRepo
 
 __all__ = [
     "ChapterDTO",
+    "ChapterListItemDTO",
     "ChapterNotFound",
     "ChapterResponseDTO",
     "ContentService",
@@ -57,6 +58,7 @@ __all__ = [
     "NoLiveChapter",
     "PanelDTO",
     "SeasonBriefDTO",
+    "SeasonChaptersDTO",
     "SeasonFullDTO",
     "SeasonNotFound",
     "SeasonResponseDTO",
@@ -195,6 +197,20 @@ class SeasonResponseDTO(_Frozen):
     season: SeasonFullDTO
 
 
+class ChapterListItemDTO(_Frozen):
+    id: UUID
+    day_index: int
+    title: str
+    synopsis: str
+    released_at: datetime
+    cover_image_url: str | None
+
+
+class SeasonChaptersDTO(_Frozen):
+    season: SeasonBriefDTO
+    chapters: list[ChapterListItemDTO]
+
+
 # ---------------------------------------------------------------------------
 # Manifest parsing (tolerant — per spec edge case "broken R2 URLs surface as-is")
 # ---------------------------------------------------------------------------
@@ -225,6 +241,16 @@ def _panels_from_manifest(manifest: dict[str, Any]) -> list[PanelDTO]:
             )
         )
     return out
+
+
+def _cover_image_from_manifest(manifest: dict[str, Any]) -> str | None:
+    raw = manifest.get("panels")
+    if isinstance(raw, list) and raw:
+        first = raw[0]
+        if isinstance(first, dict):
+            url = first.get("image_url")
+            return str(url) if url else None
+    return None
 
 
 def _cliffhanger_from_manifest(manifest: dict[str, Any]) -> str:
@@ -373,6 +399,41 @@ class ContentService:
                 cliffhanger=_cliffhanger_from_manifest(payload.manifest_json),
             ),
         )
+
+    # ── chapters_list() ─────────────────────────────────────────────────────
+
+    async def chapters_list(self) -> SeasonChaptersDTO:
+        """Resolve ``GET /seasons/current/chapters``.
+
+        Returns all live/archived chapters for the active season, ordered by
+        day_index. Used by the series album view in the PWA.
+
+        Raises
+        ------
+        KillSwitchActive
+        NoActiveSeason
+            No row with ``seasons.is_active = TRUE``.
+        """
+        await self._ensure_not_killed()
+
+        rows = await self._repo.list_active_season_chapters()
+        if not rows:
+            raise NoActiveSeason
+
+        first = rows[0]
+        season = SeasonBriefDTO(slug=first.season_slug, title=first.season_title)
+        chapters = [
+            ChapterListItemDTO(
+                id=r.public_id,
+                day_index=r.day_index,
+                title=r.title,
+                synopsis=r.synopsis,
+                released_at=r.released_at,
+                cover_image_url=_cover_image_from_manifest(r.manifest_json),
+            )
+            for r in rows
+        ]
+        return SeasonChaptersDTO(season=season, chapters=chapters)
 
     # ── season(slug) ────────────────────────────────────────────────────────
 

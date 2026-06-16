@@ -74,6 +74,20 @@ class ChapterPayload:
 
 
 @dataclass(frozen=True)
+class ChapterListRow:
+    """Minimal projection for the series album list."""
+
+    public_id: UUID
+    day_index: int
+    title: str
+    synopsis: str
+    manifest_json: dict[str, Any]
+    released_at: datetime
+    season_slug: str
+    season_title: str
+
+
+@dataclass(frozen=True)
 class SeasonPayload:
     """Projection of Q-3 — season meta + aggregated counts.
 
@@ -138,6 +152,24 @@ LIMIT 1
 """.strip()
 
 
+_Q4_ACTIVE_SEASON_CHAPTERS = """
+SELECT
+  ch.public_id,
+  ch.day_index,
+  ch.title,
+  ch.synopsis,
+  ch.manifest_json,
+  ch.released_at,
+  s.slug  AS season_slug,
+  s.title AS season_title
+FROM chapters ch
+JOIN seasons s ON s.id = ch.season_id
+WHERE s.is_active = TRUE
+  AND ch.status IN ('live', 'archived')
+ORDER BY ch.day_index ASC
+""".strip()
+
+
 _Q3_SEASON_BY_SLUG = """
 SELECT
   s.slug,
@@ -197,6 +229,19 @@ def _map_chapter(row: Any) -> ChapterPayload:
     )
 
 
+def _map_chapter_list_row(row: Any) -> ChapterListRow:
+    return ChapterListRow(
+        public_id=row["public_id"],
+        day_index=int(row["day_index"]),
+        title=str(row["title"]),
+        synopsis=str(row["synopsis"]),
+        manifest_json=dict(row["manifest_json"]),
+        released_at=row["released_at"],
+        season_slug=str(row["season_slug"]),
+        season_title=str(row["season_title"]),
+    )
+
+
 def _map_season(row: Any) -> SeasonPayload:
     raw_current = row["current_day_index"]
     return SeasonPayload(
@@ -244,6 +289,12 @@ class ContentRepo:
         )
         row = result.mappings().one_or_none()
         return _map_chapter(row) if row is not None else None
+
+    async def list_active_season_chapters(self) -> list[ChapterListRow]:
+        """Return all live/archived chapters for the active season, ordered by day_index."""
+        result = await self._s.execute(sa.text(_Q4_ACTIVE_SEASON_CHAPTERS))
+        rows = result.mappings().all()
+        return [_map_chapter_list_row(r) for r in rows]
 
     async def get_season_by_slug(self, slug: str) -> SeasonPayload | None:
         """Return season meta + chapter_count + current_day_index, or *None*.

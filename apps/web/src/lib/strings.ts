@@ -26,8 +26,8 @@ export const S = {
   appShell: {
     appName: 'AI Plot Twist',
     nav: {
-      today: 'Hoy',
-      vote: 'Votar',
+      series: 'Serie',
+      today: 'Ideas',
       me: 'Mis ideas',
       settings: 'Ajustes',
     },

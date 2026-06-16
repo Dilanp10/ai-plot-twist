@@ -18,6 +18,8 @@ from app.db import get_session
 from app.domain.content_service import (
     ContentService,
     KillSwitchActive,
+    NoActiveSeason,
+    SeasonChaptersDTO,
     SeasonNotFound,
     SeasonResponseDTO,
 )
@@ -69,6 +71,67 @@ def _problem(
     )
     set_cache(response, max_age=0, no_store=True)
     return response
+
+
+@router.get(
+    "/current/chapters",
+    operation_id="getCurrentSeasonChapters",
+    summary="All released chapters for the active season (series album view)",
+    response_model=SeasonChaptersDTO,
+)
+async def get_current_season_chapters(
+    request: Request,
+    service: ContentService = Depends(_get_content_service),
+) -> Response:
+    """Resolve ``GET /seasons/current/chapters``.
+
+    Responses:
+      * 200 — :class:`SeasonChaptersDTO` with all live/archived chapters.
+      * 503 — ``under_maintenance`` or ``no_active_season``.
+    """
+    try:
+        dto = await service.chapters_list()
+    except KillSwitchActive as exc:
+        _log.info(
+            "content_read",
+            endpoint="season_chapters",
+            status=503,
+            cache_hint="no-store",
+            code="under_maintenance",
+        )
+        return _problem(
+            request=request,
+            status=503,
+            code="under_maintenance",
+            title="Service is under maintenance",
+            extra={"reason": exc.reason, "retry_after_seconds": _RETRY_AFTER_SECONDS},
+            retry_after=_RETRY_AFTER_SECONDS,
+        )
+    except NoActiveSeason:
+        _log.info(
+            "content_read",
+            endpoint="season_chapters",
+            status=503,
+            cache_hint="no-store",
+            code="no_active_season",
+        )
+        return _problem(
+            request=request,
+            status=503,
+            code="no_active_season",
+            title="No active season",
+        )
+
+    _log.info(
+        "content_read",
+        endpoint="season_chapters",
+        status=200,
+        cache_hint="miss",
+        chapter_count=len(dto.chapters),
+    )
+    payload = JSONResponse(status_code=200, content=dto.model_dump(mode="json"))
+    set_cache(payload, max_age=60, swr=300)
+    return payload
 
 
 @router.get(
