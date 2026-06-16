@@ -223,8 +223,16 @@ async def transition(
 
     # Step 9 — Apply chapter effects from TransitionPlan.state_updates.
     #           Currently only PENDING_RELEASE → ESTRENO needs this.
+    #
+    #           The chapter to release is the one generated during the
+    #           previous cycle, held in ``next_chapter_id``. Mark IT live
+    #           and advance the cycle pointer to it. Fall back to the
+    #           current chapter_id for the very first bootstrap release
+    #           (no next_chapter_id yet).
     if plan.state_updates.get("chapter_status") == "live":
-        await ch_repo.mark_live(cycle.chapter_id)
+        release_id = cycle.next_chapter_id or cycle.chapter_id
+        await ch_repo.mark_live(release_id)
+        await cycles_repo.advance_chapter(cycle.id)
 
     # Step 10 — Commit → advisory lock released, all changes atomic.
     await session.commit()

@@ -215,6 +215,24 @@ class CyclesRepo:
             },
         )
 
+    async def advance_chapter(self, cycle_id: int) -> None:
+        """Promote ``next_chapter_id`` to ``chapter_id`` and clear it.
+
+        Called on the ESTRENO release: the chapter generated during the
+        previous cycle (held in ``next_chapter_id``) becomes the live
+        chapter the cycle points at. No-op when ``next_chapter_id`` is
+        NULL (e.g. the very first bootstrap release).
+        """
+        await self._s.execute(
+            sa.text(
+                "UPDATE cycles "
+                "SET chapter_id = next_chapter_id, "
+                "    next_chapter_id = NULL "
+                "WHERE id = :id AND next_chapter_id IS NOT NULL"
+            ),
+            {"id": cycle_id},
+        )
+
     async def lock_advisory(self, cycle_id: int) -> None:
         """Acquire ``pg_advisory_xact_lock`` for this cycle with a 2 s timeout.
 
