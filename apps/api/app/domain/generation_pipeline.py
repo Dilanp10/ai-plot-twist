@@ -325,7 +325,11 @@ async def _transition_to_pending_release(
             "  (:cycle_id, "
             "   (SELECT state FROM cycles WHERE id = :cycle_id), "
             "   'PENDING_RELEASE', 'side_effect', :trigger_id, :ncid) "
-            "ON CONFLICT (trigger_id) DO NOTHING"
+            # Match the actual partial unique index on state_transitions
+            # (cycle_id, to_state, trigger_id) WHERE trigger_id IS NOT NULL —
+            # ON CONFLICT (trigger_id) alone has no matching constraint.
+            "ON CONFLICT (cycle_id, to_state, trigger_id) "
+            "WHERE trigger_id IS NOT NULL DO NOTHING"
         ),
         {
             "cycle_id": cycle_id,
