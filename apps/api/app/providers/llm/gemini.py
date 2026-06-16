@@ -76,23 +76,30 @@ class GeminiProvider(LLMProvider):
         max_output_tokens: int = 2048,
     ) -> LLMResponse:
         # Gemini's structured-output endpoint rejects schemas containing
-        # `additionalProperties` (Pydantic emits this when extra="forbid")
-        # and the JSON-Schema-only `title` field. Convert the Pydantic
-        # model to a dict and strip those keys recursively.
+        # `additionalProperties` (Pydantic emits this when extra="forbid"),
+        # the JSON-Schema-only `title` field, and `$ref`/`$defs` (Gemini
+        # does not resolve refs). Inline refs and strip the rest.
         raw_schema = response_schema.model_json_schema()
+        defs = raw_schema.pop("$defs", {})
 
-        def _strip(obj: object) -> object:
+        def _inline_and_strip(obj: object) -> object:
             if isinstance(obj, dict):
+                if "$ref" in obj:
+                    ref = obj["$ref"]
+                    # Refs look like "#/$defs/Foo".
+                    name = ref.rsplit("/", 1)[-1]
+                    target = defs.get(name, {})
+                    return _inline_and_strip(target)
                 return {
-                    k: _strip(v)
+                    k: _inline_and_strip(v)
                     for k, v in obj.items()
-                    if k not in ("additionalProperties", "title")
+                    if k not in ("additionalProperties", "title", "$defs")
                 }
             if isinstance(obj, list):
-                return [_strip(x) for x in obj]
+                return [_inline_and_strip(x) for x in obj]
             return obj
 
-        cleaned_schema = _strip(raw_schema)
+        cleaned_schema = _inline_and_strip(raw_schema)
         config = genai_types.GenerateContentConfig(
             system_instruction=system,
             response_mime_type="application/json",
