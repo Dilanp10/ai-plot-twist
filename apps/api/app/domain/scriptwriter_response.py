@@ -47,12 +47,48 @@ _ASCII_PRINTABLE_HIGH = 126
 _ENGLISH_RATIO_THRESHOLD = 0.80
 
 
+def _clamp(text: str, cap: int) -> str:
+    """Trim *text* to at most *cap* chars, preferring a word boundary.
+
+    Cuts at the last space within the cap window when one exists past the
+    80 % mark (so we don't lose a whole sentence to a single long word);
+    otherwise hard-cuts at *cap*.
+    """
+    if len(text) <= cap:
+        return text
+    window = text[:cap]
+    last_space = window.rfind(" ")
+    if last_space >= int(cap * 0.8):
+        return window[:last_space].rstrip()
+    return window.rstrip()
+
+
+_PANEL_MAX_LENGTHS = {
+    "narration": 500,
+    "visual_prompt": 400,
+    "tts_text": 500,
+}
+
+
 class Panel(BaseModel):
     idx: int = Field(..., ge=1, le=8)
     narration: str = Field(..., min_length=10, max_length=500)
     visual_prompt: str = Field(..., min_length=20, max_length=400)
     mood: _Mood
     tts_text: str = Field(..., min_length=10, max_length=500)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _truncate_overlong(cls, data: object) -> object:
+        # LLMs frequently overshoot max_length by a few characters. Rather
+        # than fail the whole generation (and the cycle) on a soft limit,
+        # clamp the over-length text fields at a word boundary near the cap.
+        if isinstance(data, dict):
+            for field, cap in _PANEL_MAX_LENGTHS.items():
+                v = data.get(field)
+                if isinstance(v, str) and len(v) > cap:
+                    data[field] = _clamp(v, cap)
+        return data
 
     @field_validator("visual_prompt")
     @classmethod
@@ -87,6 +123,24 @@ class ScriptwriterResponse(BaseModel):
     panels: list[Panel] = Field(..., min_length=3, max_length=4)
     cliffhanger: str = Field(..., min_length=10, max_length=300)
     next_cliffhanger_seed: str = Field(..., min_length=10, max_length=300)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _truncate_overlong(cls, data: object) -> object:
+        # Same tolerance as Panel: clamp over-length top-level fields
+        # instead of failing the generation on a soft cap.
+        if isinstance(data, dict):
+            caps = {
+                "title": 80,
+                "synopsis": 400,
+                "cliffhanger": 300,
+                "next_cliffhanger_seed": 300,
+            }
+            for field, cap in caps.items():
+                v = data.get(field)
+                if isinstance(v, str) and len(v) > cap:
+                    data[field] = _clamp(v, cap)
+        return data
 
     @model_validator(mode="after")
     def panels_are_contiguous(self) -> ScriptwriterResponse:

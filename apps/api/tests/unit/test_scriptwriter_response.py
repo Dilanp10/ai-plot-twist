@@ -127,15 +127,17 @@ def test_panel_narration_too_short_rejected() -> None:
         )
 
 
-def test_panel_narration_too_long_rejected() -> None:
-    with pytest.raises(ValidationError):
-        Panel(
-            idx=1,
-            narration="x" * 501,
-            visual_prompt=_GOOD_VISUAL,
-            mood="tense",
-            tts_text=_GOOD_TTS,
-        )
+def test_panel_narration_too_long_is_truncated() -> None:
+    # LLMs routinely overshoot the soft cap by a few chars; rather than
+    # fail the whole generation, the before-validator clamps to max_length.
+    panel = Panel(
+        idx=1,
+        narration="x" * 501,
+        visual_prompt=_GOOD_VISUAL,
+        mood="tense",
+        tts_text=_GOOD_TTS,
+    )
+    assert len(panel.narration) <= 500
 
 
 def test_panel_invalid_mood_rejected() -> None:

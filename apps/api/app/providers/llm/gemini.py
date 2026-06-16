@@ -29,8 +29,6 @@ import logging
 import time
 
 import httpx
-
-logger = logging.getLogger(__name__)
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
@@ -45,6 +43,8 @@ from app.providers.llm.base import (
     LLMResponse,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class GeminiProvider(LLMProvider):
     """Gemini implementation of :class:`LLMProvider`.
@@ -54,7 +54,7 @@ class GeminiProvider(LLMProvider):
     api_key:
         Google AI Studio key (``GEMINI_API_KEY`` env var in production).
     model:
-        Pinned model string. Defaults to ``"gemini-2.0-flash"`` per
+        Pinned model string. Defaults to ``"gemini-2.5-flash"`` per
         SDD §2.4 / FR-002. Override only when migrating.
     """
 

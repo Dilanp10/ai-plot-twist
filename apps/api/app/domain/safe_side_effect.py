@@ -158,7 +158,10 @@ async def _handle_failure(
                 cycle_id=cycle_id,
                 from_state=from_state,
                 to_state="FAILED",
-                triggered_by="safe_side_effect",
+                # Must be one of the ck_st_triggered_by vocabulary:
+                # cron | admin | retry | side_effect | watchdog. The
+                # safety net forcing FAILED is conceptually a watchdog.
+                triggered_by="watchdog",
                 trigger_id=None,
                 payload_json={
                     "error_hash": error_hash,
