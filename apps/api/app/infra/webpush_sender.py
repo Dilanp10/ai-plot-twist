@@ -95,6 +95,15 @@ class WebPushSender:
         # collapse PEM newlines to the literal two-char sequence "\n".
         # Normalize back to real newlines so pywebpush/cryptography accepts it.
         self._private_key = vapid_private_key.replace("\\n", "\n")
+        logger.info(
+            "vapid_loaded raw_len=%d has_literal_backslash_n=%s has_real_newline=%s "
+            "norm_len=%d norm_starts_with_begin=%s",
+            len(vapid_private_key),
+            "\\n" in vapid_private_key,
+            "\n" in vapid_private_key,
+            len(self._private_key),
+            self._private_key.startswith("-----BEGIN"),
+        )
         self._claims: dict[str, str] = {"sub": vapid_subject}
 
     async def send(
