@@ -75,10 +75,28 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.2,
         max_output_tokens: int = 2048,
     ) -> LLMResponse:
+        # Gemini's structured-output endpoint rejects schemas containing
+        # `additionalProperties` (Pydantic emits this when extra="forbid")
+        # and the JSON-Schema-only `title` field. Convert the Pydantic
+        # model to a dict and strip those keys recursively.
+        raw_schema = response_schema.model_json_schema()
+
+        def _strip(obj: object) -> object:
+            if isinstance(obj, dict):
+                return {
+                    k: _strip(v)
+                    for k, v in obj.items()
+                    if k not in ("additionalProperties", "title")
+                }
+            if isinstance(obj, list):
+                return [_strip(x) for x in obj]
+            return obj
+
+        cleaned_schema = _strip(raw_schema)
         config = genai_types.GenerateContentConfig(
             system_instruction=system,
             response_mime_type="application/json",
-            response_schema=response_schema,
+            response_schema=cleaned_schema,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
