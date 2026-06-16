@@ -11,7 +11,7 @@
   "scripts": {
     "install": "echo 'Use \"pnpm install\" (the built-in). This entry exists so the command is discoverable via \"pnpm run\". Python deps install via the postinstall hook.'",
     "install:api": "cd apps/api && uv sync --frozen",
-    "postinstall": "cd apps/api && uv sync --frozen",
+    "postinstall": "command -v uv >/dev/null 2>&1 && (cd apps/api && uv sync --frozen) || true",
     "dev": "pnpm db:up && pnpm migrate && concurrently --kill-others-on-fail --names api,web --prefix-colors cyan,magenta \"pnpm --filter ./apps/api dev\" \"pnpm --filter ./apps/web dev\"",
     "test": "pnpm test:api && pnpm test:web",
     "test:api": "pnpm --filter ./apps/api test",
