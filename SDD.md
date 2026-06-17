@@ -1328,6 +1328,32 @@ Criterio AC-5:
 
     **Numeración de carpetas:** se mantiene `008-generation-pipeline` y `009-image-providers` para preservar agrupación temática en el filesystem (T2I cerca de "generation"). El orden temporal de spec-out es 007 → **009** → **008** → 010 → 011. La numeración refleja la familia técnica; el orden de elaboración refleja el grafo de dependencias.
 
+**Ronda 6 (pivote de scope a video, 2026-06-16):**
+
+22. **Cambio de entregable final del capítulo:** de cómic (imágenes T2I + texto) a **video corto generado (30-40 s)**. Driver: alineación con la visión del PO, que descubrió post-MVP que el output esperado era audiovisual y no estático. El pivote habilita además una rampa futura a T2V paid (Kling / Runway / Luma) post-validación de engagement, sin reescribir el pipeline.
+
+23. **Stack T2V free para MVP:** **HF LTX-Video** (primary) → **Pollinations video** (fallback). Justificación:
+    - Únicos providers con API oficial **gratuita** y latencia compatible con la ventana `GENERACION` (23:00 → 12:00 ART).
+    - **Kling free vía API oficialmente NO existe** — el plan free de su web (6 gens/día) no expone endpoints públicos; los "kling free APIs" que circulan en GitHub son reverse-engineerings del navegador que violan ToS y se caen sin aviso. Descartado para MVP por riesgo operativo y por Gate 1.
+    - `fal.ai` y `Replicate` ofrecen credit one-time pero pasan a paid al agotarse → no sostienen Gate 1 a mediano plazo.
+
+24. **Largo de capítulo: 30-40 s reales, NO 1 minuto.** Composición: **4-6 clips T2V de 5-8 s** + edge-tts narración + transiciones ffmpeg. Justificación:
+    - Ningún provider gratuito entrega clips > 10 s en una sola llamada (estado del arte 2026-Q2: LTX 5 s, CogVideoX 6 s, Pollinations 3-5 s).
+    - 1 minuto real implica paid (~USD 0.30-1.50 por video según provider) → rompe Gate 1 (USD 0 / mes en beta cerrada).
+    - 4-6 clips entran en la ventana `GENERACION` (13 h) con buffer de reintentos por clip individual.
+    - El usuario percibe "video" real (no slideshow estático) gracias al stitch con transiciones + audio narrado superpuesto.
+
+25. **Estrategia de degradación en 3 niveles** dentro del `VideoProviderRouter`: primary T2V → fallback T2V → degradación a **pipeline T2I del módulo 009 (cómic legacy)**. El módulo 009 **NO se borra**: queda como "último recurso" que garantiza que el capítulo siempre se entregue (nunca cae en `FAILED` por falla total de la cadena de video). El cliente PWA renderiza apropiadamente según el `manifest_kind` recibido (`video_mp4` vs `comic_panels`).
+
+26. **Stubs paid:** `KlingProvider`, `RunwayProvider`, `LumaProvider` se crean en el módulo nuevo con `raise NotImplementedError`. Razón: cuando el PO decida monetizar/escalar, son ~50 LOC cada uno y se enchufan al router sin tocar `generation_pipeline`. Gate 4 preservado — los proveedores externos solo se acceden vía la abstracción `VideoProvider` / `VideoProviderRouter`.
+
+27. **Estructura del cambio de spec (qué se crea, qué se delta, qué no se toca):**
+    1. **Nuevo módulo** `specs/012-video-providers/` — 8 archivos canónicos del Spec Kit (spec, plan, research, data-model, contracts/, quickstart, checklists/, tasks), espejo estructural de `009-image-providers`.
+    2. **Delta sobre** `specs/008-generation-pipeline/` — el panel pipeline pasa a video pipeline: orquesta clips T2V → ffmpeg stitch → edge-tts mix → upload de `.mp4` a R2 → persistencia de manifest con `manifest_kind='video_mp4'`. Persistencia del manifest legacy `'comic_panels'` permanece para el path de degradación.
+    3. **Módulo 009 sin cambios funcionales** — pasa a ser invocado por el router de video como último fallback. Sus contratos no se rompen.
+    4. **Orden de spec-out:** 012 antes que el delta de 008 (mismo principio que Ronda 5 #21 — productor antes que consumidor).
+    5. **Numeración del módulo:** se elige 012 (siguiente correlativo) y no, p. ej., `008b-video`, para mantener convención de carpetas planas y permitir referencias futuras estables.
+
 ### Apéndice B — Próximos artefactos del Spec Kit a producir
 
 - `specs/plan.md` — desglose de fases de implementación con criterios de "done" por fase.
@@ -1335,6 +1361,7 @@ Criterio AC-5:
 - `specs/constitution.md` — principios de proyecto (zero-cost, idempotencia, transparencia con el usuario).
 - `prompts/director_v1.txt`, `prompts/scriptwriter_v1.txt` — versionados en repo.
 - ADRs (Architecture Decision Records) por decisión no-trivial: ADR-001 `FastAPI vs Node`, ADR-002 `GitHub Actions cron vs APScheduler`, ADR-003 `Tiebreak determinístico`.
+- `specs/012-video-providers/` — spec-out del nuevo módulo de proveedores T2V (pivote Ronda 6, 2026-06-16). 8 archivos canónicos espejo estructural de `009-image-providers`. Bloquea el delta de `008-generation-pipeline`.
 
 ---
 
