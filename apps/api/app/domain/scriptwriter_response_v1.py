@@ -1,22 +1,12 @@
-"""Pydantic models for the scriptwriter LLM output — schema v2.0 (video clips).
+"""Pydantic models for the scriptwriter LLM output — schema v1.0 (comic panels).
 
 Module 008 / Task T-003 delta.
 
-``ScriptwriterResponse`` now carries ``clips`` (4-6) instead of ``panels``
-(3-4). The T2I fallback path uses ``scriptwriter_response_v1.Panel`` and
-``scriptwriter_response_v1.ScriptwriterResponse`` (unchanged).
+Preserved verbatim from the pre-video pivot. Used exclusively by the T2I
+fallback path in the generation coordinator. The primary path now uses
+``scriptwriter_response.py`` (Clip / clips schema, v2.0).
 
-``WinnerMetadata`` is NOT produced by the LLM; it is assembled by the
-pipeline coordinator from ``WinnerPick`` and stored alongside the
-scriptwriter output in ``chapters.manifest_json``.
-
-Key validation rules:
-- ``visual_prompt`` must be > 80 % ASCII printable characters (R-002).
-  Diffusion models perform worse on Spanish prompts; the system prompt
-  already instructs English, the validator is a second line of defence.
-- ``clips`` must be contiguous from idx=1 (e.g. [1,2,3,4] or [1..6]).
-  If violated, the scriptwriter consumer (T-008) retries once; on
-  second failure it renumbers server-side.
+Do NOT modify this file unless the T2I fallback path needs a fix.
 """
 
 from __future__ import annotations
@@ -27,7 +17,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
-# Clip
+# Panel
 # ---------------------------------------------------------------------------
 
 _Mood = Literal[
@@ -48,7 +38,6 @@ _ENGLISH_RATIO_THRESHOLD = 0.80
 
 
 def _clamp(text: str, cap: int) -> str:
-    """Trim *text* to at most *cap* chars, preferring a word boundary."""
     if len(text) <= cap:
         return text
     window = text[:cap]
@@ -58,14 +47,14 @@ def _clamp(text: str, cap: int) -> str:
     return window.rstrip()
 
 
-_CLIP_MAX_LENGTHS = {
+_PANEL_MAX_LENGTHS = {
     "narration": 500,
     "visual_prompt": 400,
     "tts_text": 500,
 }
 
 
-class Clip(BaseModel):
+class Panel(BaseModel):
     idx: int = Field(..., ge=1, le=8)
     narration: str = Field(..., min_length=10, max_length=500)
     visual_prompt: str = Field(..., min_length=20, max_length=400)
@@ -76,7 +65,7 @@ class Clip(BaseModel):
     @classmethod
     def _truncate_overlong(cls, data: object) -> object:
         if isinstance(data, dict):
-            for field, cap in _CLIP_MAX_LENGTHS.items():
+            for field, cap in _PANEL_MAX_LENGTHS.items():
                 v = data.get(field)
                 if isinstance(v, str) and len(v) > cap:
                     data[field] = _clamp(v, cap)
@@ -91,28 +80,20 @@ class Clip(BaseModel):
         if len(v) > 0 and printable_count / len(v) <= _ENGLISH_RATIO_THRESHOLD:
             raise ValueError(
                 "visual_prompt must be > 80 % ASCII printable characters "
-                "(write it in English for best T2V quality)"
+                "(write it in English for best T2I quality)"
             )
         return v
 
 
 # ---------------------------------------------------------------------------
-# ScriptwriterResponse — clips[4..6]
+# ScriptwriterResponse v1 — panels[3..4]
 # ---------------------------------------------------------------------------
 
 
 class ScriptwriterResponse(BaseModel):
-    """Structured output returned by the scriptwriter LLM call.
-
-    Passed as ``response_schema`` to ``LLMProvider.chat_json`` so the
-    provider enforces JSON structure at the API level. The
-    ``clips_are_contiguous`` validator provides a second layer of
-    validation after parsing.
-    """
-
     title: str = Field(..., min_length=5, max_length=80)
     synopsis: str = Field(..., min_length=20, max_length=400)
-    clips: list[Clip] = Field(..., min_length=4, max_length=6)
+    panels: list[Panel] = Field(..., min_length=3, max_length=4)
     cliffhanger: str = Field(..., min_length=10, max_length=300)
     next_cliffhanger_seed: str = Field(..., min_length=10, max_length=300)
 
@@ -133,27 +114,20 @@ class ScriptwriterResponse(BaseModel):
         return data
 
     @model_validator(mode="after")
-    def clips_are_contiguous(self) -> ScriptwriterResponse:
-        indices = sorted(c.idx for c in self.clips)
+    def panels_are_contiguous(self) -> ScriptwriterResponse:
+        indices = sorted(p.idx for p in self.panels)
         expected = list(range(1, len(indices) + 1))
         if indices != expected:
-            raise ValueError(f"clip idx values must be contiguous from 1: got {indices}")
+            raise ValueError(f"panel idx values must be contiguous from 1: got {indices}")
         return self
 
 
 # ---------------------------------------------------------------------------
-# WinnerMetadata — assembled by coordinator, stored in manifest_json
+# WinnerMetadata
 # ---------------------------------------------------------------------------
 
 
 class WinnerMetadata(BaseModel):
-    """Transparency record stored in ``manifest_json.winner_metadata``.
-
-    All fields are ``None`` in auto-continue mode (no approved twists).
-    Module 004's serializer intentionally drops this from the public API;
-    it is ops-only.
-    """
-
     winner_twist_id: UUID | None = None
     winner_author_display_name: str | None = None
     vote_count: int = 0

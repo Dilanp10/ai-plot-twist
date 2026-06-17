@@ -130,10 +130,25 @@ class Settings(BaseSettings):
     # end clamp to the last value.
     t2i_backoff_seconds_csv: str = "2,8"
 
+    # ── Module 012 (video providers) ────────────────────────────────────────
+    # Per-call generate timeout for HFVideoProvider (LTX-Video can be slow).
+    t2v_timeout_s: float = 300.0
+    # How many retries the router runs on a single T2V provider after
+    # VideoProviderUnavailable before falling through. Initial attempt NOT
+    # counted: max_retries=3 → 4 total attempts per provider.
+    t2v_max_retries: int = 3
+    # Backoff schedule (seconds) between retries on the SAME T2V provider.
+    # CSV so it can be overridden via env (e.g. "5,15,45"). Indices past
+    # the end clamp to the last value.
+    t2v_backoff_seconds_csv: str = "5,15,45"
+
     # ── Module 008 (generation pipeline) ───────────────────────────────────
     # Which image-provider chain the pipeline uses. ``dev`` → Fake only;
     # ``mvp`` → Pollinations + HuggingFace (requires huggingface_token).
     generation_image_chain_env: Literal["dev", "mvp"] = "dev"
+    # Which video-provider chain the pipeline uses. ``dev`` → Fake only;
+    # ``mvp`` → HFVideoProvider + PollinationsVideoProvider.
+    generation_video_chain_env: Literal["dev", "mvp"] = "dev"
     # Public URL of the static placeholder image used when a panel fails.
     # Resolved at request time; if unset, the real side-effect stays unwired.
     generation_placeholder_url: str | None = None
@@ -145,6 +160,25 @@ class Settings(BaseSettings):
     # Wall-clock deadline for the panel rendering phase. Panels in flight
     # past this fall back to placeholder.
     generation_deadline_s: float = 600.0
+    # Max parallel render_clip() calls in the T2V pipeline. Same default
+    # as panel concurrency but kept separate so we can tune the two paths
+    # independently.
+    generation_clip_concurrency: int = 4
+    # Requested duration per T2V clip. The provider may return a slightly
+    # different value (LTX-Video rounds to (n*8+1)/fps).
+    generation_clip_duration_s: float = 5.0
+    # Public URL of the static placeholder mp4 used when a clip fails. Same
+    # contract as ``generation_placeholder_url`` but for the T2V path.
+    generation_placeholder_video_url: str | None = None
+    # When False, the coordinator skips T2V entirely and runs the T2I path.
+    # Lets us cut over per-environment without a code change (FR-016 delta).
+    video_pipeline_enabled: bool = True
+    # Filesystem path of the static placeholder mp4 binary the coordinator
+    # uses for individual clip failures. Resolved relative to the repo root
+    # in dev and to ``/app/assets/`` in the Docker image. When the file is
+    # missing the coordinator falls back to the in-process ``MINIMAL_MP4``
+    # sentinel and logs a warning at boot.
+    generation_placeholder_video_path: str = "assets/placeholder.mp4"
 
     # ── Module 011 (web push) ──────────────────────────────────────────────
     # VAPID identity. Both required for the real fan-out side-effect.
@@ -183,6 +217,19 @@ class Settings(BaseSettings):
     def is_test(self) -> bool:
         """True when running under pytest."""
         return self.env == "test"
+
+    @property
+    def t2v_backoff_seconds(self) -> tuple[float, ...]:
+        """Parse ``t2v_backoff_seconds_csv`` into the tuple the router expects."""
+        try:
+            parts = [
+                float(s.strip())
+                for s in self.t2v_backoff_seconds_csv.split(",")
+                if s.strip()
+            ]
+        except ValueError:
+            parts = []
+        return tuple(parts) if parts else (5.0, 15.0, 45.0)
 
     @property
     def t2i_backoff_seconds(self) -> tuple[float, ...]:

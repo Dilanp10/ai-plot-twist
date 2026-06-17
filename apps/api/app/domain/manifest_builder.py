@@ -1,25 +1,20 @@
 """Manifest builder — pure functions that assemble ``chapters.manifest_json``.
 
-Module 008 / Task T-005.
+Module 008 / Task T-005 delta.
 
-Produces the v1.0 shape defined in ``contracts/manifest-shape.md``:
+Two builder functions, one per output path:
 
-    {
-        "schema_version": "1.0",
-        "panels":              [...],
-        "cliffhanger":         "...",
-        "next_cliffhanger_seed": "...",
-        "winner_metadata":     {...},
-        "generation_metadata": {...}
-    }
+``build_comic``  (schema_version 1.0, manifest_kind "comic_panels")
+    T2I fallback path — panels rendered by ImageProviderRouter.
+    Shape: panels[], cliffhanger, winner_metadata, generation_metadata.
 
-All functions are pure: they take already-computed values and return a
-plain ``dict[str, Any]`` ready for ``chapters.manifest_json`` (JSONB).
-No DB calls, no I/O, no side-effects.
+``build_video``  (schema_version 2.0, manifest_kind "video_mp4")
+    T2V primary path — clips rendered by VideoProviderRouter + ffmpeg stitch.
+    Shape: video_url, video_duration_s, clips[], cliffhanger, winner_metadata,
+           generation_metadata.
 
-The coordinator (T-010) calls :func:`build_manifest` exactly once after
-all panels are settled. The result is passed verbatim to the ``chapters``
-INSERT.
+All functions are pure: no DB calls, no I/O, no side-effects.
+The coordinator (T-010) calls exactly one builder after the pipeline settles.
 """
 
 from __future__ import annotations
@@ -28,32 +23,34 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.domain.scriptwriter_response import ScriptwriterResponse
+from app.domain.scriptwriter_response_v1 import ScriptwriterResponse as ScriptwriterResponseV1
 from app.domain.winner_selector import WinnerPick
 
 __all__ = [
     "SCHEMA_VERSION",
+    "SCHEMA_VERSION_VIDEO",
     "GenerationMetadata",
+    "ManifestClip",
     "ManifestPanel",
-    "build_manifest",
+    "VideoGenerationMetadata",
+    "build_comic",
+    "build_manifest",  # backward-compat alias for build_comic
+    "build_video",
     "winner_metadata_dict",
 ]
 
 SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION_VIDEO = "2.0"
 
 
 # ---------------------------------------------------------------------------
-# Intermediate dataclasses — produced by the panel pipeline (T-009)
+# Intermediate dataclasses — produced by the render pipelines
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class ManifestPanel:
-    """Settled state of one panel after image render + TTS + R2 upload.
-
-    ``image_url`` is always non-None: on failure it is the static
-    ``PLACEHOLDER_IMAGE_URL`` (FR-010). ``tts_url`` is None when TTS is
-    disabled or fails (best-effort, FR-005).
-    """
+    """Settled state of one panel after image render + TTS + R2 upload (T2I path)."""
 
     idx: int
     image_url: str
@@ -64,21 +61,27 @@ class ManifestPanel:
     provider_used: str
 
 
+@dataclass(frozen=True)
+class ManifestClip:
+    """Settled state of one clip after video render + TTS + R2 upload (T2V path)."""
+
+    idx: int
+    clip_url: str
+    duration_s: float
+    narration: str
+    mood: str
+    provider_used: str
+    ok: bool
+
+
 # ---------------------------------------------------------------------------
-# GenerationMetadata
+# GenerationMetadata variants
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class GenerationMetadata:
-    """Ops-only record attached to every manifest (never exposed by module 004).
-
-    ``degraded_reasons`` uses stable codes:
-      - ``panel_N_render_failed`` for image-render failures (N is the panel idx).
-      - ``tts_N_failed`` for TTS failures that were logged (informational only).
-      - ``deadline_exceeded`` when the coordinator hit the hard deadline.
-      - ``scriptwriter_retry`` when the scriptwriter needed its one retry.
-    """
+    """Ops record for the T2I comic path (schema v1.0)."""
 
     scriptwriter_model: str
     scriptwriter_provider: str
@@ -91,18 +94,29 @@ class GenerationMetadata:
     degraded_reasons: list[str]
 
 
+@dataclass(frozen=True)
+class VideoGenerationMetadata:
+    """Ops record for the T2V video path (schema v2.0)."""
+
+    scriptwriter_model: str
+    scriptwriter_provider: str
+    clip_provider_breakdown: dict[str, int]
+    tts_provider: str | None
+    ffmpeg_stitch: bool
+    started_at: str
+    finished_at: str
+    duration_ms: int
+    degraded: bool
+    degraded_reasons: list[str]
+
+
 # ---------------------------------------------------------------------------
-# Public builders
+# Public helpers
 # ---------------------------------------------------------------------------
 
 
 def winner_metadata_dict(pick: WinnerPick) -> dict[str, Any]:
-    """Convert a :class:`WinnerPick` to the ``winner_metadata`` dict shape.
-
-    ``pick.winner_public_id`` (the twist's *public* UUID) becomes
-    ``winner_twist_id`` in the manifest, matching the contract. The
-    internal integer ``winner_twist_id`` from the SQL row is NOT stored.
-    """
+    """Convert a :class:`WinnerPick` to the ``winner_metadata`` dict shape."""
     return {
         "winner_twist_id": (
             str(pick.winner_public_id) if pick.winner_public_id is not None else None
@@ -118,33 +132,31 @@ def winner_metadata_dict(pick: WinnerPick) -> dict[str, Any]:
     }
 
 
-def build_manifest(
+# ---------------------------------------------------------------------------
+# build_comic — schema v1.0
+# ---------------------------------------------------------------------------
+
+
+def build_comic(
     *,
-    script: ScriptwriterResponse,
+    script: ScriptwriterResponse | ScriptwriterResponseV1,
     panels: list[ManifestPanel],
     winner: WinnerPick,
     gen_meta: GenerationMetadata,
 ) -> dict[str, Any]:
-    """Assemble the full ``manifest_json`` dict (schema_version 1.0).
+    """Assemble ``manifest_json`` for the T2I comic path (schema_version 1.0).
 
     Parameters
     ----------
     script:
-        Parsed scriptwriter LLM output.
+        Parsed scriptwriter output (v1 or v2 schema — only top-level narrative
+        fields are used: cliffhanger, next_cliffhanger_seed).
     panels:
-        Settled panel list from the panel pipeline, one entry per script panel.
-        Must be sorted by ``idx`` and contain exactly ``len(script.panels)``
-        entries.
+        Settled panel list from the panel pipeline.
     winner:
         Winner pick from :func:`~app.domain.winner_selector.pick_winner`.
-        All fields are None / 0 in auto-continue mode.
     gen_meta:
         Coordinator-assembled generation metadata.
-
-    Returns
-    -------
-    dict[str, Any]
-        JSON-serializable dict ready for ``chapters.manifest_json``.
     """
     panel_dicts: list[dict[str, Any]] = [
         {
@@ -159,6 +171,7 @@ def build_manifest(
     ]
 
     gen_meta_dict: dict[str, Any] = {
+        "manifest_kind": "comic_panels",
         "scriptwriter_model": gen_meta.scriptwriter_model,
         "scriptwriter_provider": gen_meta.scriptwriter_provider,
         "panel_provider_breakdown": dict(gen_meta.panel_provider_breakdown),
@@ -172,7 +185,83 @@ def build_manifest(
 
     return {
         "schema_version": SCHEMA_VERSION,
+        "manifest_kind": "comic_panels",
         "panels": panel_dicts,
+        "cliffhanger": script.cliffhanger,
+        "next_cliffhanger_seed": script.next_cliffhanger_seed,
+        "winner_metadata": winner_metadata_dict(winner),
+        "generation_metadata": gen_meta_dict,
+    }
+
+
+# backward-compat alias — generation_pipeline.py calls build_manifest until T-010
+build_manifest = build_comic
+
+
+# ---------------------------------------------------------------------------
+# build_video — schema v2.0
+# ---------------------------------------------------------------------------
+
+
+def build_video(
+    *,
+    script: ScriptwriterResponse,
+    clips: list[ManifestClip],
+    video_url: str,
+    video_duration_s: float,
+    winner: WinnerPick,
+    gen_meta: VideoGenerationMetadata,
+) -> dict[str, Any]:
+    """Assemble ``manifest_json`` for the T2V video path (schema_version 2.0).
+
+    Parameters
+    ----------
+    script:
+        Parsed scriptwriter output (clips schema, v2.0).
+    clips:
+        Settled clip list from the clip pipeline.
+    video_url:
+        Public R2 URL of the stitched chapter `.mp4`.
+    video_duration_s:
+        Actual duration of the stitched video (from ffmpeg output).
+    winner:
+        Winner pick from :func:`~app.domain.winner_selector.pick_winner`.
+    gen_meta:
+        Coordinator-assembled video generation metadata.
+    """
+    clip_dicts: list[dict[str, Any]] = [
+        {
+            "idx": c.idx,
+            "clip_url": c.clip_url,
+            "duration_s": c.duration_s,
+            "narration": c.narration,
+            "mood": c.mood,
+            "provider": c.provider_used,
+            "ok": c.ok,
+        }
+        for c in clips
+    ]
+
+    gen_meta_dict: dict[str, Any] = {
+        "manifest_kind": "video_mp4",
+        "scriptwriter_model": gen_meta.scriptwriter_model,
+        "scriptwriter_provider": gen_meta.scriptwriter_provider,
+        "clip_provider_breakdown": dict(gen_meta.clip_provider_breakdown),
+        "tts_provider": gen_meta.tts_provider,
+        "ffmpeg_stitch": gen_meta.ffmpeg_stitch,
+        "started_at": gen_meta.started_at,
+        "finished_at": gen_meta.finished_at,
+        "duration_ms": gen_meta.duration_ms,
+        "degraded": gen_meta.degraded,
+        "degraded_reasons": list(gen_meta.degraded_reasons),
+    }
+
+    return {
+        "schema_version": SCHEMA_VERSION_VIDEO,
+        "manifest_kind": "video_mp4",
+        "video_url": video_url,
+        "video_duration_s": video_duration_s,
+        "clips": clip_dicts,
         "cliffhanger": script.cliffhanger,
         "next_cliffhanger_seed": script.next_cliffhanger_seed,
         "winner_metadata": winner_metadata_dict(winner),

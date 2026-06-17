@@ -1,25 +1,27 @@
-"""Unit tests: scriptwriter_response Pydantic models.
+"""Unit tests: scriptwriter_response Pydantic models (v2.0 — clips).
 
-Module 008 / Task T-003.
+Module 008 / Task T-003 delta.
 
 All tests are pure Python — no database, no I/O.
 
 Coverage:
-  Panel:
+  Clip:
     - valid construction
-    - visual_prompt: < 80 % ASCII printable → rejected
-    - visual_prompt: > 80 % ASCII printable (mixed, mostly English) → accepted
-    - visual_prompt: pure ASCII → accepted
-    - visual_prompt: too short → rejected
+    - visual_prompt: < 80 % ASCII printable -> rejected
+    - visual_prompt: > 80 % ASCII printable (mixed, mostly English) -> accepted
+    - visual_prompt: pure ASCII -> accepted
+    - visual_prompt: too short -> rejected
     - field lengths enforced (narration, tts_text, visual_prompt)
+    - all moods accepted
+    - invalid mood rejected
 
   ScriptwriterResponse:
-    - valid 3-panel response
-    - valid 4-panel response
-    - panels not contiguous from 1 → rejected
-    - panels with duplicate idx → rejected
-    - panels count < 3 → rejected
-    - panels count > 4 → rejected
+    - valid 4-clip response
+    - valid 6-clip response
+    - clips not contiguous from 1 -> rejected
+    - clips with duplicate idx -> rejected
+    - clips count < 4 -> rejected
+    - clips count > 6 -> rejected
     - field lengths enforced (title, synopsis, cliffhanger)
 
   WinnerMetadata:
@@ -35,7 +37,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.domain.scriptwriter_response import (
-    Panel,
+    Clip,
     ScriptwriterResponse,
     WinnerMetadata,
 )
@@ -56,8 +58,8 @@ _GOOD_CLIFF = "Entonces escuchó la voz de su madre."
 _GOOD_SEED = "La madre del 1998 alterno está viva pero algo no es humano."
 
 
-def _panel(idx: int = 1, visual_prompt: str = _GOOD_VISUAL) -> Panel:
-    return Panel(
+def _clip(idx: int = 1, visual_prompt: str = _GOOD_VISUAL) -> Clip:
+    return Clip(
         idx=idx,
         narration=_GOOD_NARRATION,
         visual_prompt=visual_prompt,
@@ -66,59 +68,58 @@ def _panel(idx: int = 1, visual_prompt: str = _GOOD_VISUAL) -> Panel:
     )
 
 
-def _response_3() -> ScriptwriterResponse:
+def _response_4() -> ScriptwriterResponse:
     return ScriptwriterResponse(
         title=_GOOD_TITLE,
         synopsis=_GOOD_SYNOPSIS,
-        panels=[_panel(1), _panel(2), _panel(3)],
+        clips=[_clip(1), _clip(2), _clip(3), _clip(4)],
         cliffhanger=_GOOD_CLIFF,
         next_cliffhanger_seed=_GOOD_SEED,
     )
 
 
 # ---------------------------------------------------------------------------
-# Panel tests
+# Clip tests
 # ---------------------------------------------------------------------------
 
 
-def test_panel_valid() -> None:
-    p = _panel()
-    assert p.idx == 1
-    assert p.mood == "tense"
+def test_clip_valid() -> None:
+    c = _clip()
+    assert c.idx == 1
+    assert c.mood == "tense"
 
 
-def test_panel_visual_prompt_pure_ascii_accepted() -> None:
-    p = _panel(
+def test_clip_visual_prompt_pure_ascii_accepted() -> None:
+    c = _clip(
         visual_prompt="cinematic shot of a woman in a Buenos Aires apartment, 35mm, moody"
     )
-    assert p.visual_prompt.startswith("cinematic")
+    assert c.visual_prompt.startswith("cinematic")
 
 
-def test_panel_visual_prompt_mostly_ascii_accepted() -> None:
-    # A few accented chars within an otherwise English prompt (< 20 % non-ASCII)
-    prompt = "a woman in a Buenos Aires apartment — moody lighting, 35mm film, cinematic, no text"
-    p = _panel(visual_prompt=prompt)
-    assert p.visual_prompt == prompt
+def test_clip_visual_prompt_mostly_ascii_accepted() -> None:
+    prompt = "a woman in a Buenos Aires apartment - moody lighting, 35mm film, cinematic, no text"
+    c = _clip(visual_prompt=prompt)
+    assert c.visual_prompt == prompt
 
 
-def test_panel_visual_prompt_mostly_non_ascii_rejected() -> None:
-    # Build a string that is > 20 % non-ASCII printable (80 % non-ASCII chars).
-    # Validator threshold: printable_ascii / total <= 0.80 → reject.
-    non_ascii_heavy = "ñ" * 80 + "a" * 20  # 80 % non-ASCII → should reject
+def test_clip_visual_prompt_mostly_non_ascii_rejected() -> None:
+    non_ascii_heavy = "n" * 80 + "a" * 20
+    # Patch to use actual non-ASCII:
+    non_ascii_heavy = "ñ" * 80 + "a" * 20
     assert len(non_ascii_heavy) == 100
     with pytest.raises(ValidationError) as exc_info:
-        _panel(visual_prompt=non_ascii_heavy)
+        _clip(visual_prompt=non_ascii_heavy)
     assert "ASCII printable" in str(exc_info.value)
 
 
-def test_panel_visual_prompt_too_short_rejected() -> None:
+def test_clip_visual_prompt_too_short_rejected() -> None:
     with pytest.raises(ValidationError):
-        _panel(visual_prompt="short")
+        _clip(visual_prompt="short")
 
 
-def test_panel_narration_too_short_rejected() -> None:
+def test_clip_narration_too_short_rejected() -> None:
     with pytest.raises(ValidationError):
-        Panel(
+        Clip(
             idx=1,
             narration="x" * 9,  # min_length=10
             visual_prompt=_GOOD_VISUAL,
@@ -127,22 +128,20 @@ def test_panel_narration_too_short_rejected() -> None:
         )
 
 
-def test_panel_narration_too_long_is_truncated() -> None:
-    # LLMs routinely overshoot the soft cap by a few chars; rather than
-    # fail the whole generation, the before-validator clamps to max_length.
-    panel = Panel(
+def test_clip_narration_too_long_is_truncated() -> None:
+    clip = Clip(
         idx=1,
         narration="x" * 501,
         visual_prompt=_GOOD_VISUAL,
         mood="tense",
         tts_text=_GOOD_TTS,
     )
-    assert len(panel.narration) <= 500
+    assert len(clip.narration) <= 500
 
 
-def test_panel_invalid_mood_rejected() -> None:
+def test_clip_invalid_mood_rejected() -> None:
     with pytest.raises(ValidationError):
-        Panel(
+        Clip(
             idx=1,
             narration=_GOOD_NARRATION,
             visual_prompt=_GOOD_VISUAL,
@@ -151,7 +150,7 @@ def test_panel_invalid_mood_rejected() -> None:
         )
 
 
-def test_panel_all_moods_accepted() -> None:
+def test_clip_all_moods_accepted() -> None:
     moods = [
         "tense",
         "ominous",
@@ -164,14 +163,14 @@ def test_panel_all_moods_accepted() -> None:
         "tender",
     ]
     for mood in moods:
-        p = Panel(
+        c = Clip(
             idx=1,
             narration=_GOOD_NARRATION,
             visual_prompt=_GOOD_VISUAL,
             mood=mood,  # type: ignore[arg-type]
             tts_text=_GOOD_TTS,
         )
-        assert p.mood == mood
+        assert c.mood == mood
 
 
 # ---------------------------------------------------------------------------
@@ -179,30 +178,30 @@ def test_panel_all_moods_accepted() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_response_valid_3_panels() -> None:
-    r = _response_3()
-    assert len(r.panels) == 3
-    assert [p.idx for p in r.panels] == [1, 2, 3]
+def test_response_valid_4_clips() -> None:
+    r = _response_4()
+    assert len(r.clips) == 4
+    assert [c.idx for c in r.clips] == [1, 2, 3, 4]
 
 
-def test_response_valid_4_panels() -> None:
+def test_response_valid_6_clips() -> None:
     r = ScriptwriterResponse(
         title=_GOOD_TITLE,
         synopsis=_GOOD_SYNOPSIS,
-        panels=[_panel(1), _panel(2), _panel(3), _panel(4)],
+        clips=[_clip(i) for i in range(1, 7)],
         cliffhanger=_GOOD_CLIFF,
         next_cliffhanger_seed=_GOOD_SEED,
     )
-    assert len(r.panels) == 4
+    assert len(r.clips) == 6
 
 
-def test_response_non_contiguous_panels_rejected() -> None:
-    # idx 1, 2, 4 — skips 3
+def test_response_non_contiguous_clips_rejected() -> None:
+    # idx 1, 2, 4, 5 -- skips 3
     with pytest.raises(ValidationError) as exc_info:
         ScriptwriterResponse(
             title=_GOOD_TITLE,
             synopsis=_GOOD_SYNOPSIS,
-            panels=[_panel(1), _panel(2), _panel(4)],
+            clips=[_clip(1), _clip(2), _clip(4), _clip(5)],
             cliffhanger=_GOOD_CLIFF,
             next_cliffhanger_seed=_GOOD_SEED,
         )
@@ -210,34 +209,33 @@ def test_response_non_contiguous_panels_rejected() -> None:
 
 
 def test_response_duplicate_idx_rejected() -> None:
-    # idx [1, 1, 2] is not [1, 2, 3]
     with pytest.raises(ValidationError):
         ScriptwriterResponse(
             title=_GOOD_TITLE,
             synopsis=_GOOD_SYNOPSIS,
-            panels=[_panel(1), _panel(1), _panel(2)],
+            clips=[_clip(1), _clip(1), _clip(2), _clip(3)],
             cliffhanger=_GOOD_CLIFF,
             next_cliffhanger_seed=_GOOD_SEED,
         )
 
 
-def test_response_too_few_panels_rejected() -> None:
+def test_response_too_few_clips_rejected() -> None:
     with pytest.raises(ValidationError):
         ScriptwriterResponse(
             title=_GOOD_TITLE,
             synopsis=_GOOD_SYNOPSIS,
-            panels=[_panel(1), _panel(2)],
+            clips=[_clip(1), _clip(2), _clip(3)],  # min_length=4
             cliffhanger=_GOOD_CLIFF,
             next_cliffhanger_seed=_GOOD_SEED,
         )
 
 
-def test_response_too_many_panels_rejected() -> None:
+def test_response_too_many_clips_rejected() -> None:
     with pytest.raises(ValidationError):
         ScriptwriterResponse(
             title=_GOOD_TITLE,
             synopsis=_GOOD_SYNOPSIS,
-            panels=[_panel(i) for i in range(1, 6)],  # 5 panels
+            clips=[_clip(i) for i in range(1, 8)],  # 7 clips, max_length=6
             cliffhanger=_GOOD_CLIFF,
             next_cliffhanger_seed=_GOOD_SEED,
         )
@@ -248,7 +246,7 @@ def test_response_title_too_short_rejected() -> None:
         ScriptwriterResponse(
             title="Hi",  # min_length=5
             synopsis=_GOOD_SYNOPSIS,
-            panels=[_panel(1), _panel(2), _panel(3)],
+            clips=[_clip(i) for i in range(1, 5)],
             cliffhanger=_GOOD_CLIFF,
             next_cliffhanger_seed=_GOOD_SEED,
         )
@@ -259,7 +257,7 @@ def test_response_synopsis_too_short_rejected() -> None:
         ScriptwriterResponse(
             title=_GOOD_TITLE,
             synopsis="Corto.",  # min_length=20
-            panels=[_panel(1), _panel(2), _panel(3)],
+            clips=[_clip(i) for i in range(1, 5)],
             cliffhanger=_GOOD_CLIFF,
             next_cliffhanger_seed=_GOOD_SEED,
         )

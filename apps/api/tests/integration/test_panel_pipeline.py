@@ -28,7 +28,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.domain.panel_pipeline import PanelResult, render_panel
-from app.domain.scriptwriter_response import Panel
+from app.domain.scriptwriter_response_v1 import Panel
 from app.domain.seed_derivation import stable_hash
 from app.infra.r2_uploader import R2Uploader, R2UploadError
 from app.providers.image.base import (

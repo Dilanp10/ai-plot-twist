@@ -105,11 +105,11 @@ async def test_scriptwriter_drafts_valid_script_against_gemini() -> None:
     script = await sw.draft(_build_context(with_winner=True))
 
     assert isinstance(script, ScriptwriterResponse)
-    assert 3 <= len(script.panels) <= 4
-    for p in script.panels:
-        assert p.narration.strip(), f"empty narration on panel {p.idx}"
-        assert p.visual_prompt.strip(), f"empty visual on panel {p.idx}"
-        assert p.tts_text.strip(), f"empty tts_text on panel {p.idx}"
+    assert 4 <= len(script.clips) <= 6
+    for c in script.clips:
+        assert c.narration.strip(), f"empty narration on clip {c.idx}"
+        assert c.visual_prompt.strip(), f"empty visual on clip {c.idx}"
+        assert c.tts_text.strip(), f"empty tts_text on clip {c.idx}"
     assert script.cliffhanger.strip()
 
 
@@ -127,7 +127,7 @@ async def test_scriptwriter_auto_mode_against_gemini() -> None:
 
     script = await sw.draft(_build_context(with_winner=False))
 
-    assert 3 <= len(script.panels) <= 4
+    assert 4 <= len(script.clips) <= 6
     assert script.title.strip()
 
 

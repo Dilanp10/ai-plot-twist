@@ -35,6 +35,13 @@ async def _drive_lifespan(app: Any) -> dict[str, Any]:
     snapshot: dict[str, Any] = {}
     async with app.router.lifespan_context(app):
         snapshot["image_router"] = getattr(app.state, "image_router", "MISSING")
+        snapshot["video_router"] = getattr(app.state, "video_router", "MISSING")
+        snapshot["placeholder_video_url"] = getattr(
+            app.state, "placeholder_video_url", "MISSING"
+        )
+        snapshot["placeholder_video_bytes"] = getattr(
+            app.state, "placeholder_video_bytes", "MISSING"
+        )
         snapshot["registered_side_effect"] = side_effects.get("generation_pipeline")
     return snapshot
 
@@ -192,3 +199,96 @@ async def test_lifespan_registers_real_generation_with_mvp_chain(
     assert router.provider_names == ("pollinations", "hf")
     fn = snap["registered_side_effect"]
     assert fn is not generation_pipeline_stub
+
+
+# ---------------------------------------------------------------------------
+# T2V wiring — module 008 delta (T-010 + T-017)
+# ---------------------------------------------------------------------------
+
+_T2V_VIDEO_URL = "https://assets.example.com/static/placeholder.mp4"
+
+
+async def test_lifespan_skips_t2v_when_no_placeholder_video_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No GENERATION_PLACEHOLDER_VIDEO_URL → video_router stays None (T2I only)."""
+    env = dict(_FULL_CONFIG)
+    # GENERATION_PLACEHOLDER_VIDEO_URL intentionally NOT set
+    app = _build_app(monkeypatch, **env)
+    snap = await _drive_lifespan(app)
+
+    assert snap["video_router"] is None
+    assert snap["placeholder_video_url"] is None
+    # Image side-effect still registered
+    from app.domain.side_effects import generation_pipeline_stub
+
+    assert snap["registered_side_effect"] is not generation_pipeline_stub
+
+
+async def test_lifespan_skips_t2v_when_video_pipeline_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env = dict(_FULL_CONFIG)
+    env["GENERATION_PLACEHOLDER_VIDEO_URL"] = _T2V_VIDEO_URL
+    env["VIDEO_PIPELINE_ENABLED"] = "false"
+
+    app = _build_app(monkeypatch, **env)
+    snap = await _drive_lifespan(app)
+
+    assert snap["video_router"] is None
+
+
+async def test_lifespan_wires_t2v_dev_chain_when_url_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """dev chain only needs the URL set (FakeVideoProvider, no HF token)."""
+    from app.providers.video import VideoProviderRouter
+
+    env = dict(_FULL_CONFIG)
+    env["GENERATION_PLACEHOLDER_VIDEO_URL"] = _T2V_VIDEO_URL
+    env["GENERATION_VIDEO_CHAIN_ENV"] = "dev"
+
+    app = _build_app(monkeypatch, **env)
+    snap = await _drive_lifespan(app)
+
+    assert isinstance(snap["video_router"], VideoProviderRouter)
+    assert snap["video_router"].provider_names == ("fake",)
+    assert snap["placeholder_video_url"] == _T2V_VIDEO_URL
+    assert isinstance(snap["placeholder_video_bytes"], bytes)
+    assert len(snap["placeholder_video_bytes"]) > 0
+
+
+async def test_lifespan_skips_t2v_when_mvp_chain_missing_hf_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """mvp video chain without HF token → degrades silently to T2I."""
+    env = dict(_FULL_CONFIG)
+    env["GENERATION_PLACEHOLDER_VIDEO_URL"] = _T2V_VIDEO_URL
+    env["GENERATION_VIDEO_CHAIN_ENV"] = "mvp"
+    env["HUGGINGFACE_TOKEN"] = None
+
+    app = _build_app(monkeypatch, **env)
+    snap = await _drive_lifespan(app)
+
+    assert snap["video_router"] is None
+    # Image side-effect still wired (uses T2I as the only path)
+    from app.domain.side_effects import generation_pipeline_stub
+
+    assert snap["registered_side_effect"] is not generation_pipeline_stub
+
+
+async def test_lifespan_wires_t2v_mvp_chain_with_hf_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.providers.video import VideoProviderRouter
+
+    env = dict(_FULL_CONFIG)
+    env["GENERATION_PLACEHOLDER_VIDEO_URL"] = _T2V_VIDEO_URL
+    env["GENERATION_VIDEO_CHAIN_ENV"] = "mvp"
+    env["HUGGINGFACE_TOKEN"] = "dummy-hf-token"
+
+    app = _build_app(monkeypatch, **env)
+    snap = await _drive_lifespan(app)
+
+    assert isinstance(snap["video_router"], VideoProviderRouter)
+    assert snap["video_router"].provider_names == ("hf", "pollinations")

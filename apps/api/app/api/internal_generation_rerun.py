@@ -60,6 +60,7 @@ from app.infra.r2_uploader import R2Uploader
 from app.logging import get_logger
 from app.middleware.admin_token import verify_admin_token
 from app.providers.image import ImageProviderRouter
+from app.providers.video import VideoProviderRouter
 from app.settings import Settings, get_settings
 
 _log = get_logger(__name__)
@@ -98,6 +99,24 @@ def get_image_router(request: Request) -> ImageProviderRouter:
 
 def get_r2_uploader(request: Request) -> R2Uploader:
     return _require_state(request, "r2_uploader", R2Uploader)  # type: ignore[return-value]
+
+
+def get_video_router(request: Request) -> VideoProviderRouter | None:
+    """Optional dependency — None when T2V isn't wired (T2I-only deployment)."""
+    obj = getattr(request.app.state, "video_router", None)
+    if isinstance(obj, VideoProviderRouter):
+        return obj
+    return None
+
+
+def get_placeholder_video_url(request: Request) -> str | None:
+    obj = getattr(request.app.state, "placeholder_video_url", None)
+    return obj if isinstance(obj, str) else None
+
+
+def get_placeholder_video_bytes(request: Request) -> bytes | None:
+    obj = getattr(request.app.state, "placeholder_video_bytes", None)
+    return obj if isinstance(obj, bytes) else None
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +232,9 @@ async def post_generation_rerun(
     scriptwriter: Scriptwriter = Depends(get_scriptwriter),
     image_router: ImageProviderRouter = Depends(get_image_router),
     uploader: R2Uploader = Depends(get_r2_uploader),
+    video_router: VideoProviderRouter | None = Depends(get_video_router),
+    placeholder_video_url: str | None = Depends(get_placeholder_video_url),
+    placeholder_video_bytes: bytes | None = Depends(get_placeholder_video_bytes),
     settings: Settings = Depends(get_settings),
 ) -> RerunResponse:
     """Regenerate the chapter that follows *chapter_id*.
@@ -236,6 +258,12 @@ async def post_generation_rerun(
         tts_voice=settings.generation_tts_voice,
         panel_concurrency=settings.generation_panel_concurrency,
         deadline_s=settings.generation_deadline_s,
+        video_router=video_router,
+        placeholder_video_url=placeholder_video_url,
+        placeholder_video_bytes=placeholder_video_bytes,
+        clip_concurrency=settings.generation_clip_concurrency,
+        clip_duration_s=settings.generation_clip_duration_s,
+        video_pipeline_enabled=settings.video_pipeline_enabled,
         skip_cycle_transition=True,
     )
 

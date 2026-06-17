@@ -30,7 +30,7 @@ from app.domain.scriptwriter_prompts import (
     load_auto_system_prompt,
     load_system_prompt,
 )
-from app.domain.scriptwriter_response import Panel, ScriptwriterResponse
+from app.domain.scriptwriter_response import Clip, ScriptwriterResponse
 from app.providers.llm.base import LLMProviderError, LLMResponse
 from app.providers.llm.fake import FakeLLMProvider
 from app.providers.llm.router import LLMProviderRouter
@@ -42,21 +42,21 @@ from app.providers.llm.router import LLMProviderRouter
 _GOOD_VISUAL = "a woman reaches into a fractured mirror, cinematic, 35mm"
 
 
-def _good_script(n_panels: int = 3) -> ScriptwriterResponse:
-    panels = [
-        Panel(
+def _good_script(n_clips: int = 4) -> ScriptwriterResponse:
+    clips = [
+        Clip(
             idx=i,
             narration="El espejo crujió como hielo viejo al amanecer.",
             visual_prompt=_GOOD_VISUAL,
             mood="tense",
             tts_text="El espejo crujió como hielo viejo al amanecer.",
         )
-        for i in range(1, n_panels + 1)
+        for i in range(1, n_clips + 1)
     ]
     return ScriptwriterResponse(
         title="Lo que había detrás del espejo",
         synopsis="Mariana acepta la propuesta del reflejo y descubre su otra-yo.",
-        panels=panels,
+        clips=clips,
         cliffhanger="Entonces escuchó la voz de su madre muerta.",
         next_cliffhanger_seed="La madre del 1998 alterno está viva.",
     )
@@ -113,7 +113,7 @@ async def test_draft_winner_mode_returns_script() -> None:
 
     assert isinstance(result, ScriptwriterResponse)
     assert result.title == script.title
-    assert len(result.panels) == 3
+    assert len(result.clips) == 4
 
 
 @pytest.mark.asyncio

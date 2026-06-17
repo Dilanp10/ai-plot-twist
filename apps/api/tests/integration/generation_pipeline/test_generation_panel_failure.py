@@ -44,7 +44,7 @@ class _FailOnceImageProvider(FakeImageProvider):
 @pytest.mark.asyncio
 async def test_partial_panel_failure_ready_degraded() -> None:
     """One panel failing → status='ready_degraded'."""
-    script = make_script(n_panels=3)
+    script = make_script(n_clips=4)
     ctx = make_ctx()
     persist_mock = AsyncMock(return_value=_NEW_CHAPTER_DB_ID)
 
@@ -78,7 +78,7 @@ async def test_partial_panel_failure_ready_degraded() -> None:
 @pytest.mark.asyncio
 async def test_partial_panel_failure_uses_placeholder_url() -> None:
     """The failed panel's image_url must be the placeholder URL."""
-    script = make_script(n_panels=3)
+    script = make_script(n_clips=4)
     ctx = make_ctx()
     persist_mock = AsyncMock(return_value=_NEW_CHAPTER_DB_ID)
 
@@ -116,7 +116,7 @@ async def test_partial_panel_failure_uses_placeholder_url() -> None:
 @pytest.mark.asyncio
 async def test_all_panels_failed_still_ready_degraded() -> None:
     """All panels failing → status='ready_degraded' (not FAILED)."""
-    script = make_script(n_panels=3)
+    script = make_script(n_clips=4)
     ctx = make_ctx()
     persist_mock = AsyncMock(return_value=_NEW_CHAPTER_DB_ID)
 

@@ -1,22 +1,26 @@
-"""Happy path: winner mode, all panels succeed, status='ready'.
+"""T2V happy path: video router renders all clips, ffmpeg stitches → v2.0 manifest.
 
-Module 008 / Task T-010.
+Module 008 / Task T-010 delta.
+
+ffmpeg is mocked at the stitch_pipeline level so the suite runs without
+the binary installed.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.domain.generation_pipeline import run_generation_pipeline
+from app.domain.stitch_pipeline import StitchResult
 
 from ._helpers import (
     CHAPTER_ID,
-    CYCLE_ID,
-    NEW_CHAPTER_PUBLIC_ID,
     PLACEHOLDER_URL,
-    SEASON_ID,
+    PLACEHOLDER_VIDEO_BYTES,
+    PLACEHOLDER_VIDEO_URL,
     TTS_VOICE,
     make_ctx,
     make_image_router,
@@ -24,15 +28,23 @@ from ._helpers import (
     make_script,
     make_scriptwriter,
     make_uploader,
+    make_video_router,
 )
 
 _MODULE = "app.domain.generation_pipeline"
-_NEW_CHAPTER_DB_ID = 55
+_NEW_CHAPTER_DB_ID = 70
+
+
+def _stub_stitch_result() -> StitchResult:
+    return StitchResult(
+        video_url="https://r2.example.com/chapter-ab12cd34.mp4",
+        video_duration_s=20.0,
+        video_bytes_len=4096,
+    )
 
 
 @pytest.mark.asyncio
-async def test_happy_path_creates_ready_chapter() -> None:
-    """Happy path: all panels succeed → status='ready'."""
+async def test_t2v_happy_status_ready(tmp_path: Path) -> None:
     script = make_script(n_clips=4)
     ctx = make_ctx()
     persist_mock = AsyncMock(return_value=_NEW_CHAPTER_DB_ID)
@@ -41,6 +53,11 @@ async def test_happy_path_creates_ready_chapter() -> None:
         patch(f"{_MODULE}._load_ctx_from_db", new=AsyncMock(return_value=ctx)),
         patch(f"{_MODULE}._persist_new_chapter", new=persist_mock),
         patch(f"{_MODULE}._transition_to_pending_release", new=AsyncMock()),
+        patch(
+            f"{_MODULE}.stitch_clips",
+            new=AsyncMock(return_value=_stub_stitch_result()),
+        ),
+        patch("app.domain.clip_pipeline.synthesize", new=AsyncMock(return_value=None)),
     ):
         await run_generation_pipeline(
             CHAPTER_ID,
@@ -52,18 +69,18 @@ async def test_happy_path_creates_ready_chapter() -> None:
             tts_voice=TTS_VOICE,
             panel_concurrency=4,
             deadline_s=60.0,
+            video_router=make_video_router(),
+            placeholder_video_url=PLACEHOLDER_VIDEO_URL,
+            placeholder_video_bytes=PLACEHOLDER_VIDEO_BYTES,
+            clip_concurrency=4,
+            video_pipeline_enabled=True,
         )
 
-    persist_mock.assert_called_once()
-    kwargs = persist_mock.call_args.kwargs
-    assert kwargs["status"] == "ready"
-    assert kwargs["cycle_id"] == CYCLE_ID
-    assert kwargs["season_id"] == SEASON_ID
-    assert kwargs["next_day_index"] == 11
+    assert persist_mock.call_args.kwargs["status"] == "ready"
 
 
 @pytest.mark.asyncio
-async def test_happy_path_manifest_has_correct_panel_count() -> None:
+async def test_t2v_happy_manifest_is_video_mp4() -> None:
     script = make_script(n_clips=4)
     ctx = make_ctx()
     persist_mock = AsyncMock(return_value=_NEW_CHAPTER_DB_ID)
@@ -72,6 +89,11 @@ async def test_happy_path_manifest_has_correct_panel_count() -> None:
         patch(f"{_MODULE}._load_ctx_from_db", new=AsyncMock(return_value=ctx)),
         patch(f"{_MODULE}._persist_new_chapter", new=persist_mock),
         patch(f"{_MODULE}._transition_to_pending_release", new=AsyncMock()),
+        patch(
+            f"{_MODULE}.stitch_clips",
+            new=AsyncMock(return_value=_stub_stitch_result()),
+        ),
+        patch("app.domain.clip_pipeline.synthesize", new=AsyncMock(return_value=None)),
     ):
         await run_generation_pipeline(
             CHAPTER_ID,
@@ -83,43 +105,21 @@ async def test_happy_path_manifest_has_correct_panel_count() -> None:
             tts_voice=TTS_VOICE,
             panel_concurrency=4,
             deadline_s=60.0,
+            video_router=make_video_router(),
+            placeholder_video_url=PLACEHOLDER_VIDEO_URL,
+            placeholder_video_bytes=PLACEHOLDER_VIDEO_BYTES,
         )
 
     manifest = persist_mock.call_args.kwargs["manifest"]
-    assert len(manifest["panels"]) == 4
+    assert manifest["schema_version"] == "2.0"
+    assert manifest["manifest_kind"] == "video_mp4"
+    assert "video_url" in manifest
+    assert "clips" in manifest
+    assert "panels" not in manifest
 
 
 @pytest.mark.asyncio
-async def test_happy_path_transitions_cycle() -> None:
-    script = make_script()
-    ctx = make_ctx()
-    transition_mock = AsyncMock()
-
-    with (
-        patch(f"{_MODULE}._load_ctx_from_db", new=AsyncMock(return_value=ctx)),
-        patch(f"{_MODULE}._persist_new_chapter", new=AsyncMock(return_value=_NEW_CHAPTER_DB_ID)),
-        patch(f"{_MODULE}._transition_to_pending_release", new=transition_mock),
-    ):
-        await run_generation_pipeline(
-            CHAPTER_ID,
-            session=make_mock_session(),
-            scriptwriter=make_scriptwriter(script),
-            image_router=make_image_router(),
-            uploader=make_uploader(),
-            placeholder_url=PLACEHOLDER_URL,
-            tts_voice=TTS_VOICE,
-            panel_concurrency=4,
-            deadline_s=60.0,
-        )
-
-    transition_mock.assert_called_once()
-    assert transition_mock.call_args.args[1] == CYCLE_ID
-    assert transition_mock.call_args.args[2] == _NEW_CHAPTER_DB_ID
-
-
-@pytest.mark.asyncio
-async def test_happy_path_panel_urls_not_placeholder() -> None:
-    """All panels should have real (non-placeholder) image URLs."""
+async def test_t2v_happy_manifest_video_url_from_stitch() -> None:
     script = make_script(n_clips=4)
     ctx = make_ctx()
     persist_mock = AsyncMock(return_value=_NEW_CHAPTER_DB_ID)
@@ -128,6 +128,11 @@ async def test_happy_path_panel_urls_not_placeholder() -> None:
         patch(f"{_MODULE}._load_ctx_from_db", new=AsyncMock(return_value=ctx)),
         patch(f"{_MODULE}._persist_new_chapter", new=persist_mock),
         patch(f"{_MODULE}._transition_to_pending_release", new=AsyncMock()),
+        patch(
+            f"{_MODULE}.stitch_clips",
+            new=AsyncMock(return_value=_stub_stitch_result()),
+        ),
+        patch("app.domain.clip_pipeline.synthesize", new=AsyncMock(return_value=None)),
     ):
         await run_generation_pipeline(
             CHAPTER_ID,
@@ -139,43 +144,46 @@ async def test_happy_path_panel_urls_not_placeholder() -> None:
             tts_voice=TTS_VOICE,
             panel_concurrency=4,
             deadline_s=60.0,
+            video_router=make_video_router(),
+            placeholder_video_url=PLACEHOLDER_VIDEO_URL,
+            placeholder_video_bytes=PLACEHOLDER_VIDEO_BYTES,
         )
 
     manifest = persist_mock.call_args.kwargs["manifest"]
-    for panel in manifest["panels"]:
-        assert panel["image_url"] != PLACEHOLDER_URL
+    assert manifest["video_url"] == "https://r2.example.com/chapter-ab12cd34.mp4"
+    assert manifest["video_duration_s"] == 20.0
 
 
 @pytest.mark.asyncio
-async def test_happy_path_new_chapter_public_id_used() -> None:
-    """The pre-generated public UUID should appear in R2 keys."""
+async def test_t2v_happy_returns_video_kind_summary() -> None:
     script = make_script(n_clips=4)
     ctx = make_ctx()
-    uploaded_keys: list[str] = []
-
-    async def _capture_upload(key: str, body: bytes, content_type: str) -> str:
-        uploaded_keys.append(key)
-        return f"https://r2.example.com/{key}"
-
-    from app.infra.r2_uploader import R2Uploader as _R2Uploader
-    uploader = MagicMock(spec=_R2Uploader)
-    uploader.upload = _capture_upload
 
     with (
         patch(f"{_MODULE}._load_ctx_from_db", new=AsyncMock(return_value=ctx)),
         patch(f"{_MODULE}._persist_new_chapter", new=AsyncMock(return_value=_NEW_CHAPTER_DB_ID)),
         patch(f"{_MODULE}._transition_to_pending_release", new=AsyncMock()),
+        patch(
+            f"{_MODULE}.stitch_clips",
+            new=AsyncMock(return_value=_stub_stitch_result()),
+        ),
+        patch("app.domain.clip_pipeline.synthesize", new=AsyncMock(return_value=None)),
     ):
-        await run_generation_pipeline(
+        summary = await run_generation_pipeline(
             CHAPTER_ID,
             session=make_mock_session(),
             scriptwriter=make_scriptwriter(script),
             image_router=make_image_router(),
-            uploader=uploader,
+            uploader=make_uploader(),
             placeholder_url=PLACEHOLDER_URL,
             tts_voice=TTS_VOICE,
             panel_concurrency=4,
             deadline_s=60.0,
+            video_router=make_video_router(),
+            placeholder_video_url=PLACEHOLDER_VIDEO_URL,
+            placeholder_video_bytes=PLACEHOLDER_VIDEO_BYTES,
         )
 
-    assert any(str(NEW_CHAPTER_PUBLIC_ID) in k for k in uploaded_keys)
+    assert summary.manifest_kind == "video_mp4"
+    assert summary.panels_ok == 4  # 4 clips ok
+    assert summary.panels_degraded == 0

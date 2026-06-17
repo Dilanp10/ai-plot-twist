@@ -8,9 +8,9 @@ All tests patch the three DB seams so no real database is required:
   - ``_transition_to_pending_release``
 
 Real pipeline components are used for everything else:
-  - FakeLLMProvider → Scriptwriter
-  - FakeImageProvider → ImageProviderRouter
-  - AsyncMock → R2Uploader
+  - FakeLLMProvider -> Scriptwriter
+  - FakeImageProvider -> ImageProviderRouter
+  - AsyncMock -> R2Uploader
 """
 
 from __future__ import annotations
@@ -21,13 +21,18 @@ from uuid import UUID, uuid4
 from app.domain.generation_pipeline import _PipelineCtx
 from app.domain.scriptwriter import Scriptwriter
 from app.domain.scriptwriter_prompts import ChapterBrief, ScriptContext, SeasonBrief
-from app.domain.scriptwriter_response import Panel, ScriptwriterResponse
+from app.domain.scriptwriter_response import Clip, ScriptwriterResponse
 from app.domain.winner_selector import WinnerPick
 from app.infra.r2_uploader import R2Uploader
 from app.providers.image.fake import FakeImageProvider
 from app.providers.image.router import ImageProviderRouter
 from app.providers.llm.fake import FakeLLMProvider
 from app.providers.llm.router import LLMProviderRouter
+from app.providers.video import (
+    MINIMAL_MP4,
+    FakeVideoProvider,
+    VideoProviderRouter,
+)
 
 # ---------------------------------------------------------------------------
 # Fixed identifiers (stable across test runs for assertion equality)
@@ -39,10 +44,13 @@ SEASON_SLUG = "s01-el-tunel"
 CYCLE_ID = 42
 NEW_CHAPTER_PUBLIC_ID: UUID = uuid4()
 PLACEHOLDER_URL = "https://assets.example.com/static/placeholder.webp"
+PLACEHOLDER_VIDEO_URL = "https://assets.example.com/static/placeholder.mp4"
+PLACEHOLDER_VIDEO_BYTES = MINIMAL_MP4
 TTS_VOICE = "es-AR-ElenaNeural"
 
 _GOOD_VISUAL = "a shattered mirror reflecting two timelines, cinematic 35mm"
 _GOOD_NARRATION = "El espejo crujió como hielo viejo al amanecer."
+_GOOD_TTS_TEXT = "El espejo crujió como hielo viejo al amanecer."
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +86,7 @@ def make_ctx(
     *,
     winner_pick: WinnerPick | None = None,
     winner_content: str | None = "La propuesta ganadora de Alice.",
-    n_panels: int = 3,
+    n_clips: int = 4,
 ) -> _PipelineCtx:
     """Return a preset _PipelineCtx (no DB needed)."""
     if winner_pick is None:
@@ -89,22 +97,22 @@ def make_ctx(
         season_slug=SEASON_SLUG,
         script_context=ScriptContext(
             season=SeasonBrief(
-                title="El túnel sin fondo",
+                title="El tunel sin fondo",
                 bible_json={"genre": "thriller", "setting": "Buenos Aires 2026"},
             ),
             recent_chapters=[
                 ChapterBrief(
                     day_index=9,
-                    title="La decisión",
-                    synopsis="Valentina eligió cruzar el espejo.",
-                    cliffhanger="¿Qué la esperaba del otro lado?",
+                    title="La decision",
+                    synopsis="Valentina eligio cruzar el espejo.",
+                    cliffhanger="Que la esperaba del otro lado?",
                 )
             ],
             current_chapter=ChapterBrief(
                 day_index=10,
                 title="El otro lado",
-                synopsis="Valentina descubrió que su doble la esperaba.",
-                cliffhanger="La doble susurró su nombre al revés.",
+                synopsis="Valentina descubrio que su doble la esperaba.",
+                cliffhanger="La doble susurro su nombre al reves.",
             ),
             next_day_index=11,
             winner_content=winner_content,
@@ -115,27 +123,24 @@ def make_ctx(
     )
 
 
-def make_script(n_panels: int = 3) -> ScriptwriterResponse:
-    panels = [
-        Panel(
+def make_script(n_clips: int = 4) -> ScriptwriterResponse:
+    clips = [
+        Clip(
             idx=i,
             narration=_GOOD_NARRATION,
             visual_prompt=_GOOD_VISUAL,
             mood="tense",
             tts_text=_GOOD_TTS_TEXT,
         )
-        for i in range(1, n_panels + 1)
+        for i in range(1, n_clips + 1)
     ]
     return ScriptwriterResponse(
-        title="El capítulo once",
+        title="El capitulo once",
         synopsis="Valentina descifra el mensaje de su doble y escapa.",
-        panels=panels,
-        cliffhanger="Un tercer espejo apareció donde no había ninguno.",
+        clips=clips,
+        cliffhanger="Un tercer espejo aparecio donde no habia ninguno.",
         next_cliffhanger_seed="El tercer espejo muestra el futuro.",
     )
-
-
-_GOOD_TTS_TEXT = "El espejo crujió como hielo viejo al amanecer."
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +159,17 @@ def make_image_router() -> ImageProviderRouter:
     """Return an ImageProviderRouter backed by FakeImageProvider."""
     return ImageProviderRouter(
         [FakeImageProvider()],
+        check_health=False,
+        backoff_schedule_seconds=(0.0,),
+    )
+
+
+def make_video_router(*, fail: bool = False) -> VideoProviderRouter:
+    """Return a VideoProviderRouter backed by FakeVideoProvider (or empty chain)."""
+    if fail:
+        return VideoProviderRouter(providers=[], check_health=False)
+    return VideoProviderRouter(
+        providers=[FakeVideoProvider()],
         check_health=False,
         backoff_schedule_seconds=(0.0,),
     )

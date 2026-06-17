@@ -23,6 +23,16 @@ FROM python:3.11-slim AS base
 # Using COPY --from keeps the final image slim (no Cargo/curl).
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# ── System dependencies ────────────────────────────────────────────────────
+# ffmpeg is required by app.domain.stitch_pipeline to concat T2V clips +
+# audio into the final chapter mp4. apt clean keeps the layer slim.
+# `RUN ffmpeg -version` makes the build fail fast if the binary is missing,
+# rather than failing at first generation run on prod.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && ffmpeg -version >/dev/null
+
 WORKDIR /app
 
 # ── Dependency layer ────────────────────────────────────────────────────────
@@ -41,6 +51,10 @@ RUN uv sync --frozen --no-dev
 COPY apps/api/app/      ./app/
 COPY apps/api/alembic/  ./alembic/
 COPY apps/api/alembic.ini ./
+# Static assets (placeholder.mp4 used by the T2V coordinator on clip
+# failures). Lives outside apps/api/ so the same binary is also reachable
+# from the upload-static-assets script run locally.
+COPY assets/           ./assets/
 
 # ── Runtime config ───────────────────────────────────────────────────────────
 # Put .venv/bin on PATH so the CMD can invoke uvicorn directly without

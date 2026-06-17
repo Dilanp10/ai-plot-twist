@@ -56,6 +56,11 @@ from app.providers.llm import (
     LLMProvider,
     LLMProviderRouter,
 )
+from app.providers.video import (
+    MINIMAL_MP4,
+    VideoProviderRouter,
+)
+from app.providers.video import chain_for_env as video_chain_for_env
 from app.settings import Settings, get_settings
 
 _log = get_logger(__name__)
@@ -172,6 +177,33 @@ def _wire_director_filter(app: FastAPI, settings: Settings) -> None:
     _log.info("side_effect_registered", name="director_filter")
 
 
+def _load_placeholder_video_bytes(path_str: str) -> bytes:
+    """Return the placeholder mp4 bytes, falling back to MINIMAL_MP4 if missing.
+
+    The committed binary lives at ``assets/placeholder.mp4`` (repo-root
+    relative in dev, copied to ``/app/assets/`` in the Docker image). If
+    the file vanishes we use the in-process 136-byte sentinel rather than
+    crashing the boot — a degraded placeholder beats a downed cycle.
+    """
+    from pathlib import Path
+
+    candidates = [
+        Path(path_str),
+        Path("/app") / path_str,
+        Path(__file__).resolve().parents[3] / path_str,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.read_bytes()
+
+    _log.warning(
+        "placeholder_video_file_missing",
+        searched=[str(c) for c in candidates],
+        detail="Falling back to MINIMAL_MP4 sentinel (136 bytes, no visible content).",
+    )
+    return MINIMAL_MP4
+
+
 def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
     """Register the real generation_pipeline side-effect when fully configured.
 
@@ -194,6 +226,9 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
     app.state.image_router = None
     app.state.scriptwriter = None
     app.state.r2_uploader = None
+    app.state.video_router = None
+    app.state.placeholder_video_url = None
+    app.state.placeholder_video_bytes = None
 
     director_router = getattr(app.state, "director_router", None)
     if director_router is None:
@@ -270,6 +305,41 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
     app.state.scriptwriter = scriptwriter
     app.state.r2_uploader = uploader
 
+    # -------------------------------------------------------------------------
+    # T2V wiring (optional — falls back to T2I if anything is missing)
+    # -------------------------------------------------------------------------
+    video_router: VideoProviderRouter | None = None
+    placeholder_video_url: str | None = None
+    placeholder_video_bytes: bytes | None = None
+
+    if settings.video_pipeline_enabled and settings.generation_placeholder_video_url:
+        try:
+            video_chain = video_chain_for_env(
+                settings.generation_video_chain_env,
+                huggingface_token=settings.huggingface_token,
+            )
+        except (ValueError, NotImplementedError) as exc:
+            _log.warning(
+                "generation_pipeline_video_chain_failed",
+                env=settings.generation_video_chain_env,
+                error=str(exc),
+                detail="T2V disabled; coordinator will run T2I directly.",
+            )
+        else:
+            video_router = VideoProviderRouter(
+                providers=video_chain,
+                max_retries_on_unavailable=settings.t2v_max_retries,
+                backoff_schedule_seconds=settings.t2v_backoff_seconds,
+            )
+            placeholder_video_url = settings.generation_placeholder_video_url
+            placeholder_video_bytes = _load_placeholder_video_bytes(
+                settings.generation_placeholder_video_path
+            )
+
+    app.state.video_router = video_router
+    app.state.placeholder_video_url = placeholder_video_url
+    app.state.placeholder_video_bytes = placeholder_video_bytes
+
     real_side_effect = build_generation_pipeline_side_effect(
         get_session_factory(),
         scriptwriter,
@@ -279,6 +349,12 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
         tts_voice=settings.generation_tts_voice,
         panel_concurrency=settings.generation_panel_concurrency,
         deadline_s=settings.generation_deadline_s,
+        video_router=video_router,
+        placeholder_video_url=placeholder_video_url,
+        placeholder_video_bytes=placeholder_video_bytes,
+        clip_concurrency=settings.generation_clip_concurrency,
+        clip_duration_s=settings.generation_clip_duration_s,
+        video_pipeline_enabled=settings.video_pipeline_enabled,
     )
     side_effects.register("generation_pipeline", real_side_effect)
     _log.info(
@@ -286,6 +362,9 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
         name="generation_pipeline",
         image_chain=settings.generation_image_chain_env,
         image_providers=image_router.provider_names,
+        video_chain=settings.generation_video_chain_env if video_router else None,
+        video_providers=video_router.provider_names if video_router else None,
+        t2v_active=video_router is not None,
     )
 
 

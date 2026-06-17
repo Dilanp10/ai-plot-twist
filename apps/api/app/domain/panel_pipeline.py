@@ -33,7 +33,7 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.domain.scriptwriter_response import Panel
+from app.domain.scriptwriter_response_v1 import Panel
 from app.domain.seed_derivation import stable_hash
 from app.domain.tts_synthesizer import synthesize
 from app.infra.r2_uploader import R2Uploader, R2UploadError
