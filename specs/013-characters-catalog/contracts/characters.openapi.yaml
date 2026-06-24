@@ -1,0 +1,131 @@
+openapi: 3.0.3
+info:
+  title: AI Plot Twist — Characters Catalog
+  version: "1.0.0"
+  description: |
+    Read-only public catalog of in-game characters used as I2V seed images.
+    Defined in module `013-characters-catalog` (SDD Ronda 7, ADR-0008).
+
+    Consumed by:
+    - Module 010 PWA — `CharacterPicker.svelte`.
+    - Module 005 delta — validates `character_id` against this catalog
+      at twist submission time (server-side; uses the same repo).
+
+servers:
+  - url: https://ai-plot-twist.fly.dev
+    description: Production
+  - url: http://localhost:8000
+    description: Local dev
+
+security:
+  - bearerAuth: []
+
+paths:
+  /characters:
+    get:
+      summary: List active characters
+      operationId: listCharacters
+      description: |
+        Returns the catalog of active characters ordered by
+        `(sort_order ASC, id ASC)`. Hidden (`active=FALSE`) characters are
+        omitted.
+
+        Cache: ETag + `Cache-Control: private, max-age=300`. Clients should
+        send back `If-None-Match` to enable 304 responses.
+      parameters:
+        - in: header
+          name: If-None-Match
+          required: false
+          schema:
+            type: string
+          description: Previously returned ETag to enable 304 response.
+      responses:
+        "200":
+          description: Catalog returned.
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Deterministic hash of the ordered active rows.
+            Cache-Control:
+              schema:
+                type: string
+                example: "private, max-age=300"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CharactersList"
+        "304":
+          description: Catalog unchanged. Empty body.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    CharactersList:
+      type: object
+      required: [characters]
+      properties:
+        characters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Character"
+      example:
+        characters:
+          - id: 1
+            slug: messi
+            display_name: Lionel Messi
+            photo_url: https://r2-public.example/static/characters/messi.webp
+            aspect_ratio: "1:1"
+          - id: 2
+            slug: bad-bunny
+            display_name: Bad Bunny
+            photo_url: https://r2-public.example/static/characters/bad-bunny.webp
+            aspect_ratio: "1:1"
+
+    Character:
+      type: object
+      required: [id, slug, display_name, photo_url, aspect_ratio]
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          description: Stable integer key. Referenced by `twist_proposals.character_id` (module 005 delta).
+        slug:
+          type: string
+          pattern: "^[a-z0-9-]{2,40}$"
+          description: kebab-case identifier; matches the filename of the photo in R2.
+        display_name:
+          type: string
+          minLength: 2
+          maxLength: 60
+          description: UTF-8 display label.
+        photo_url:
+          type: string
+          format: uri
+          description: Absolute public R2 URL of the canonical photo.
+        aspect_ratio:
+          type: string
+          enum: ["1:1", "9:16", "16:9"]
+          description: Photo aspect ratio. MVP always uses "1:1".
+
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
