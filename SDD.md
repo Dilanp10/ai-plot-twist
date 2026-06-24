@@ -1354,6 +1354,31 @@ Criterio AC-5:
     4. **Orden de spec-out:** 012 antes que el delta de 008 (mismo principio que Ronda 5 #21 — productor antes que consumidor).
     5. **Numeración del módulo:** se elige 012 (siguiente correlativo) y no, p. ej., `008b-video`, para mantener convención de carpetas planas y permitir referencias futuras estables.
 
+**Ronda 7 (pivote a I2V con catálogo de personajes, 2026-06-24):**
+
+28. **Cambio de entregable T2V → I2V Kling (pago):** primary chain pasa de T2V free (HF LTX + Pollinations) a I2V con Kling AI plan Standard pago (~USD 4.66/mes anual). Driver: T2V free deforma rostros e introduce inconsistencias entre clips, rompiendo el contrato emocional cuando el "personaje del capítulo" es central a la narrativa. I2V resuelve identidad visual fijando una foto-semilla. **Gate 1 (USD 0/mo) se relaja a "USD ≤ 5/mo" en MVP paid** — formaliza la rampa a paid prevista en Ronda 6 #26.
+
+29. **Selección obligatoria de personaje en propuesta:** cada `twist_proposal` requiere un `character_id` FK a una nueva tabla `characters` con catálogo hardcoded en seed Alembic. La UI muestra carrusel de cards 1:1; form inválido sin selección. Razón: I2V necesita una imagen-semilla; vincular esa imagen a la propuesta antes del cierre de RECEPCION_IDEAS deja el binding determinístico y evita coordinación posterior.
+
+30. **Composición 14s fija = intro 2s + Kling 10s + outro 2s:** el scriptwriter pasa de generar 4-6 clips a una sola escena. El video final lo arma `stitch_pipeline` con ffmpeg concat demuxer. Razón: 10s es el sweet-spot del plan Standard de Kling (1 crédito/gen), y el formato fijo simplifica el budget tracking (1 cap = 1 crédito/día + buffer reruns).
+
+31. **Intro = drawtext dinámico ffmpeg; outro = mp4 fijo en R2:** intro genera 2s sobre un fondo PNG fijo con `drawtext text=winner_display_name`. Outro 2s es un mp4 pre-rendered con CTA fijo, subido una sola vez a R2 (`static/outro.mp4`). Razón: cero costo de generación, parametrizable, no consume créditos Kling; el outro fijo da estética uniforme.
+
+32. **Cadena de degradación 4 niveles:** Kling I2V (primary) → T2V HF (fallback 1) → T2V Pollinations (fallback 2) → T2I del módulo 009 (degradación final, cómic legacy). El cliente PWA renderiza según `manifest_kind` (`video_mp4` vs `comic_panels`). Razón: garantizar que el capítulo siempre se entregue (nunca `FAILED`) preservando inversión previa en T2V (Ronda 6 #25).
+
+33. **Budget tracking + kill-switch:** tabla `kling_usage_month (year_month PK, credits_used INT, credits_max INT)`. Pre-check antes de cada `KlingI2VProvider.generate()`; si quedan < 20% del cap → salta a fallback. Cap configurable via `KLING_BUDGET_CREDITS_MAX`. Razón: contención dura del costo paid; sin esto un bug en reruns puede agotar plan completo en 1 día.
+
+34. **Estructura del cambio de spec (qué se crea, qué se delta, qué no se toca):**
+    1. **Nuevo módulo** `specs/013-characters-catalog/` — 8 archivos canónicos del Spec Kit.
+    2. **Deltas:**
+       - `specs/005-twists-submission/` — FK `character_id` NOT NULL en proposals + migration.
+       - `specs/012-video-providers/` — nueva ABC `ImageToVideoProvider`, `KlingI2VProvider` activo, budget table.
+       - `specs/008-generation-pipeline/` — `scriptwriter_response_v3` (1 escena), `clip_pipeline.py` I2V, `stitch_pipeline.py` reescrito a 14s.
+       - `specs/010-pwa-client/` — `CharacterPicker.svelte` + form change.
+    3. **Sin cambios:** módulo 009 (T2I), 011 (web-push), 003 (FSM), 007 (voting), 001-004.
+    4. **Orden de spec-out:** 013 → delta 005 → delta 012 → delta 008 → delta 010 (productor antes que consumidor, principio Ronda 5 #21 y Ronda 6 #27.4).
+    5. **Numeración del módulo:** se elige 013 (siguiente correlativo), consistente con Ronda 6 #27.5.
+
 ### Apéndice B — Próximos artefactos del Spec Kit a producir
 
 - `specs/plan.md` — desglose de fases de implementación con criterios de "done" por fase.
@@ -1362,6 +1387,12 @@ Criterio AC-5:
 - `prompts/director_v1.txt`, `prompts/scriptwriter_v1.txt` — versionados en repo.
 - ADRs (Architecture Decision Records) por decisión no-trivial: ADR-001 `FastAPI vs Node`, ADR-002 `GitHub Actions cron vs APScheduler`, ADR-003 `Tiebreak determinístico`.
 - `specs/012-video-providers/` — spec-out del nuevo módulo de proveedores T2V (pivote Ronda 6, 2026-06-16). 8 archivos canónicos espejo estructural de `009-image-providers`. Bloquea el delta de `008-generation-pipeline`.
+- `specs/013-characters-catalog/` — spec-out del nuevo módulo de catálogo de personajes (Ronda 7, 2026-06-24). 8 archivos canónicos. Bloquea los deltas de 005, 012, 008 y 010.
+- `specs/005-twists-submission/` delta — FK `character_id` NOT NULL + migration strategy.
+- `specs/012-video-providers/` delta — `ImageToVideoProvider` ABC + `KlingI2VProvider` real + budget table.
+- `specs/008-generation-pipeline/` delta — `scriptwriter_response_v3`, `clip_pipeline.py` I2V, `stitch_pipeline.py` 14s.
+- `specs/010-pwa-client/` delta — `CharacterPicker.svelte` + form.
+- `docs/adr/0008-i2v-kling-character-catalog.md` — ADR formal del pivote.
 
 ---
 
