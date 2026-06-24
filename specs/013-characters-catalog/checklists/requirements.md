@@ -38,7 +38,7 @@
       SQL via the partial index, not in Python. Disabling a character
       does NOT cascade-delete or invalidate existing twist proposals.
       Verified by integration test that sets `active=FALSE` on a row
-      that has a `twist_proposals` reference and asserts the proposal
+      that has a `twists` reference and asserts the proposal
       still loads via JOIN.
 
 - [ ] **FR-007** — `CharactersRepo.get_by_id_if_active(character_id)`

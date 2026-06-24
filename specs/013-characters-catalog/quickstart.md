@@ -145,7 +145,7 @@ def upgrade() -> None:
 ```
 
 Apply and re-query `GET /characters`. The hidden character is absent.
-Verify that an existing `twist_proposal` referencing him by id is **still
+Verify that an existing `twist` referencing him by id is **still
 joinable** (FK survives because the row is not deleted).
 
 ---
@@ -153,7 +153,7 @@ joinable** (FK survives because the row is not deleted).
 ## 6. Where this plugs into the rest of the system
 
 - **Module 005 delta** adds `character_id INTEGER NOT NULL REFERENCES characters(id)`
-  to `twist_proposals`. The POST /twists endpoint validates the id exists
+  to `twists`. The POST /twists endpoint validates the id exists
   AND the row is active.
 - **Module 008 delta**, during GENERACION, reads
   `proposal.character.photo_r2_key`, builds the absolute URL, and passes it

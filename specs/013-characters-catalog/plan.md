@@ -13,7 +13,7 @@ dependencies; no provider abstraction; no FSM hooks.
 
 Consumed by:
 
-- Module 005 delta — adds `character_id` FK NOT NULL on `twist_proposals`.
+- Module 005 delta — adds `character_id` FK NOT NULL on `twists`.
 - Module 008 delta — reads `photo_r2_key` to feed Kling I2V (`image_url` arg).
 - Module 010 delta — PWA renders the catalog as a horizontal carousel
   (`CharacterPicker.svelte`).
@@ -67,7 +67,7 @@ sizing assumption.
 
 ### Gate 7 — Soft delete
 - [x] `active BOOLEAN NOT NULL DEFAULT TRUE`. Disabling is `UPDATE active=FALSE`,
-      never `DELETE`. FK references from `twist_proposals` survive.
+      never `DELETE`. FK references from `twists` survive.
 
 ### Gate 8 — Quota
 - [x] N/A. Read-only public endpoint, JWT-rate-limited at the global level.
@@ -106,7 +106,7 @@ See [tasks.md](./tasks.md). Phases:
   background); PO reviews each photo against checklist before upload.
 
 - **R-3 — Slug stability**: once a character ships, its `slug` MUST NOT
-  change (it is referenced by twist_proposals.character_id via id, but FE
+  change (it is referenced by twists.character_id via id, but FE
   carousel URLs and CDN cache use slug). Mitigation: code review enforces
   "add new row, deprecate old via active=FALSE" — never rename.
 

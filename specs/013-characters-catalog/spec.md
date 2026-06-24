@@ -26,7 +26,7 @@ The module ships:
 
 No HTTP write endpoints (no admin UI). No FSM integration. No business logic
 beyond the read endpoint and the seed. Module 005 delta consumes this catalog
-via a new `character_id` FK on `twist_proposals`; module 008 delta consumes
+via a new `character_id` FK on `twists`; module 008 delta consumes
 `photo_r2_key` to feed the I2V provider.
 
 This module is **pure catalog infrastructure**. Admin UI for character CRUD

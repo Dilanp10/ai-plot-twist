@@ -20,7 +20,7 @@ El estado-del-arte 2026-Q2 en consistencia de rostros se logra con **Image-to-Vi
 
 Pivote arquitectónico: la primary chain pasa a **I2V con Kling**, con catálogo de personajes hardcoded del que el usuario debe elegir uno al proponer un twist.
 
-1. **Selección obligatoria de personaje** — cada `twist_proposal` requiere `character_id` FK a una nueva tabla `characters`. UI con carrusel; form inválido sin selección.
+1. **Selección obligatoria de personaje** — cada `twist` requiere `character_id` FK a una nueva tabla `characters`. UI con carrusel; form inválido sin selección.
 2. **I2V Kling como primary** — nueva ABC `ImageToVideoProvider` con signature `(image_url, prompt, duration_s)`. `KlingI2VProvider` (hoy stub) se promueve a primary.
 3. **Composición fija 14s** — intro 2s (drawtext con winner_name) + Kling 10s + outro 2s (mp4 fijo en R2). Scriptwriter pasa de 4-6 clips a 1 escena.
 4. **Cadena de degradación 4 niveles** — Kling I2V → T2V HF → T2V Pollinations → T2I del módulo 009.

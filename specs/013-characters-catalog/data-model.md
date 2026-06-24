@@ -4,7 +4,7 @@
 
 One new table (`characters`) + one partial index. R2 path contract for the
 photos. No changes to existing tables in this module — the FK in
-`twist_proposals` is added by the **module 005 delta**, not here.
+`twists` is added by the **module 005 delta**, not here.
 
 ---
 
@@ -34,7 +34,7 @@ CREATE INDEX idx_characters_active_sort
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | INTEGER | PK, IDENTITY | Stable integer key. Used by FK in `twist_proposals` (module 005 delta). |
+| `id` | INTEGER | PK, IDENTITY | Stable integer key. Used by FK in `twists` (module 005 delta). |
 | `slug` | TEXT | UNIQUE, regex `^[a-z0-9-]{2,40}$` | Used as filename (`<slug>.webp`) and in R2 path. **MUST NOT change once shipped** — see plan R-3. |
 | `display_name` | TEXT | length 2-60 | Rendered in the carousel and intro overlay. UTF-8 (accents, ñ, etc.). |
 | `photo_r2_key` | TEXT | NOT NULL, starts with `static/characters/` and ends with `.webp` | Joined with `R2_PUBLIC_BASE_URL` at serialization time to form `photo_url`. |
@@ -109,7 +109,7 @@ static/characters/messi.webp
 
 ## Backward / forward compatibility
 
-- **Existing data**: tables in main (e.g., `twist_proposals`) are not
+- **Existing data**: tables in main (e.g., `twists`) are not
   touched here. The FK that depends on `characters.id` is added by
   module 005 delta in a separate migration.
 - **Future v0.2 admin UI**: when admin endpoints land, the table is

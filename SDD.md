@@ -1358,7 +1358,7 @@ Criterio AC-5:
 
 28. **Cambio de entregable T2V → I2V Kling (pago):** primary chain pasa de T2V free (HF LTX + Pollinations) a I2V con Kling AI plan Standard pago (~USD 4.66/mes anual). Driver: T2V free deforma rostros e introduce inconsistencias entre clips, rompiendo el contrato emocional cuando el "personaje del capítulo" es central a la narrativa. I2V resuelve identidad visual fijando una foto-semilla. **Gate 1 (USD 0/mo) se relaja a "USD ≤ 5/mo" en MVP paid** — formaliza la rampa a paid prevista en Ronda 6 #26.
 
-29. **Selección obligatoria de personaje en propuesta:** cada `twist_proposal` requiere un `character_id` FK a una nueva tabla `characters` con catálogo hardcoded en seed Alembic. La UI muestra carrusel de cards 1:1; form inválido sin selección. Razón: I2V necesita una imagen-semilla; vincular esa imagen a la propuesta antes del cierre de RECEPCION_IDEAS deja el binding determinístico y evita coordinación posterior.
+29. **Selección obligatoria de personaje en propuesta:** cada `twist` requiere un `character_id` FK a una nueva tabla `characters` con catálogo hardcoded en seed Alembic. La UI muestra carrusel de cards 1:1; form inválido sin selección. Razón: I2V necesita una imagen-semilla; vincular esa imagen a la propuesta antes del cierre de RECEPCION_IDEAS deja el binding determinístico y evita coordinación posterior.
 
 30. **Composición 14s fija = intro 2s + Kling 10s + outro 2s:** el scriptwriter pasa de generar 4-6 clips a una sola escena. El video final lo arma `stitch_pipeline` con ffmpeg concat demuxer. Razón: 10s es el sweet-spot del plan Standard de Kling (1 crédito/gen), y el formato fijo simplifica el budget tracking (1 cap = 1 crédito/día + buffer reruns).
 
