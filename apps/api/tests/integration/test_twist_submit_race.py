@@ -157,6 +157,7 @@ async def test_ten_concurrent_submits_yield_three_201_seven_409(
                     "/api/v1/twists/submit",
                     json={
                         "chapter_id": str(chapter_public_id),
+                        "character_id": 1,
                         "content": f"idea concurrente {i} xxxx",
                     },
                     headers={
@@ -217,6 +218,7 @@ async def test_concurrent_submits_for_distinct_users_all_succeed(
                     "/api/v1/twists/submit",
                     json={
                         "chapter_id": str(chapter_public_id),
+                        "character_id": 1,
                         "content": f"user {i} primera xxxx",
                     },
                     headers={

@@ -68,6 +68,7 @@ class Twist:
     submitted_at: datetime
     reviewed_at: datetime | None
     deleted_at: datetime | None
+    character_id: int
 
 
 @dataclass(frozen=True)
@@ -103,12 +104,13 @@ def _map_row(row: Any) -> Twist:
         submitted_at=row["submitted_at"],
         reviewed_at=row["reviewed_at"],
         deleted_at=row["deleted_at"],
+        character_id=int(row["character_id"]),
     )
 
 
 _SELECT_COLS = (
     "id, public_id, chapter_id, user_id, content, status, "
-    "director_reason, submitted_at, reviewed_at, deleted_at"
+    "director_reason, submitted_at, reviewed_at, deleted_at, character_id"
 )
 
 
@@ -146,6 +148,7 @@ class TwistsRepo:
         chapter_id: int,
         user_id: int,
         content: str,
+        character_id: int | None = None,
     ) -> Twist:
         """Insert a new twist with ``status='pending_review'`` and
         return the full row.
@@ -153,17 +156,34 @@ class TwistsRepo:
         ``public_id`` and ``submitted_at`` are populated by DB defaults.
         ``content`` is stored verbatim — callers MUST normalize first
         (see :func:`app.domain.twist_content.normalize`).
+
+        ``character_id`` (Ronda 7, module 013) MUST point at an active row
+        in ``characters``. When ``None`` is passed the column is filled
+        with the lowest-``sort_order`` active character via a SELECT
+        subquery — a backward-compat path so legacy tests that pre-date
+        the FK keep working. **Production code paths always pass an
+        explicit id** (the service layer validates it first via
+        :class:`CharactersRepo.get_by_id_if_active`).
         """
         result = await self._s.execute(
             sa.text(
-                "INSERT INTO twists (chapter_id, user_id, content) "
-                "VALUES (:chapter_id, :user_id, :content) "
+                "INSERT INTO twists (chapter_id, user_id, content, character_id) "
+                "VALUES ("
+                "  :chapter_id, :user_id, :content, "
+                "  COALESCE("
+                "    :character_id, "
+                "    (SELECT id FROM characters "
+                "     WHERE active = TRUE "
+                "     ORDER BY sort_order ASC, id ASC LIMIT 1)"
+                "  )"
+                ") "
                 f"RETURNING {_SELECT_COLS}"
             ),
             {
                 "chapter_id": chapter_id,
                 "user_id": user_id,
                 "content": content,
+                "character_id": character_id,
             },
         )
         row = result.mappings().one()

@@ -146,6 +146,7 @@ async def test_submit_endpoint_happy_path_returns_201(
 
     body = {
         "chapter_id": str(chapter_public_id),
+        "character_id": 1,
         "content": "Una idea brillante",
     }
     headers = {**_auth_header(token), "Idempotency-Key": str(uuid4())}
@@ -181,6 +182,7 @@ async def test_submit_endpoint_idempotent_replay_returns_200(
 
     body = {
         "chapter_id": str(chapter_public_id),
+        "character_id": 1,
         "content": "Para repetir igual",
     }
     idem_key = str(uuid4())
@@ -216,7 +218,7 @@ async def test_submit_endpoint_missing_idempotency_key_returns_422(
     await setup_session.commit()
     clear_flags_cache()
 
-    body = {"chapter_id": str(chapter_public_id), "content": "Sin idem-key"}
+    body = {"chapter_id": str(chapter_public_id), "character_id": 1, "content": "Sin idem-key"}
 
     try:
         async with AsyncClient(
@@ -244,7 +246,7 @@ async def test_submit_endpoint_no_jwt_returns_401(
     await setup_session.commit()
     clear_flags_cache()
 
-    body = {"chapter_id": str(chapter_public_id), "content": "Sin token alguno"}
+    body = {"chapter_id": str(chapter_public_id), "character_id": 1, "content": "Sin token alguno"}
     headers = {"Idempotency-Key": str(uuid4())}
 
     try:
@@ -281,6 +283,7 @@ async def test_submit_endpoint_over_quota_returns_409(
                     "/api/v1/twists/submit",
                     json={
                         "chapter_id": str(chapter_public_id),
+                        "character_id": 1,
                         "content": f"idea {i} xxxxx",
                     },
                     headers={
@@ -294,6 +297,7 @@ async def test_submit_endpoint_over_quota_returns_409(
                 "/api/v1/twists/submit",
                 json={
                     "chapter_id": str(chapter_public_id),
+                    "character_id": 1,
                     "content": "cuarta deberia fallar",
                 },
                 headers={
@@ -330,7 +334,7 @@ async def test_submit_endpoint_kill_switch_returns_503(
     await setup_session.commit()
     clear_flags_cache()
 
-    body = {"chapter_id": str(chapter_public_id), "content": "Bajo maintenance"}
+    body = {"chapter_id": str(chapter_public_id), "character_id": 1, "content": "Bajo maintenance"}
     headers = {**_auth_header(token), "Idempotency-Key": str(uuid4())}
 
     try:

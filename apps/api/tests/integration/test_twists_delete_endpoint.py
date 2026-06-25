@@ -115,7 +115,7 @@ async def _submit_via_endpoint(
     content: str,
 ) -> str:
     """POST a fresh twist via the submit endpoint; return its public_id."""
-    body = {"chapter_id": str(chapter_public_id), "content": content}
+    body = {"chapter_id": str(chapter_public_id), "character_id": 1, "content": content}
     resp = await client.post(
         "/api/v1/twists/submit",
         json=body,

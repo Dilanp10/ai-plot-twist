@@ -112,7 +112,7 @@ async def _submit_via_endpoint(
     chapter_public_id: UUID,
     content: str,
 ) -> str:
-    body = {"chapter_id": str(chapter_public_id), "content": content}
+    body = {"chapter_id": str(chapter_public_id), "character_id": 1, "content": content}
     resp = await client.post(
         "/api/v1/twists/submit",
         json=body,

@@ -27,7 +27,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db import get_session_factory
@@ -36,6 +36,7 @@ from app.domain.twist_submission import (
     ChapterMismatch,
     ForbiddenNotOwner,
     IdempotencyConflict,
+    InvalidCharacter,
     KillSwitchActive,
     OverQuota,
     TwistLockBusy,
@@ -91,10 +92,15 @@ class SubmitRequest(_Frozen):
     ``content`` is validated by the domain normalizer (5..280 chars after
     NFKC + Cc/Cf/Co/Cs stripping + trim). The handler raises 422 on
     out-of-bounds values.
+
+    ``character_id`` references an active row in ``characters`` (module
+    013). The service raises :class:`InvalidCharacter` for unknown /
+    hidden ids, mapped to 422 ``invalid_character``.
     """
 
     chapter_id: UUID
     content: str
+    character_id: int = Field(..., ge=1)
 
 
 class TwistMineDTO(_Frozen):
@@ -169,9 +175,16 @@ def _hash_request_body(body: SubmitRequest) -> str:
     idempotency key is deterministic from what the client actually sent.
     Different whitespace/zero-width chars → different hash → not an
     idempotency replay.
+
+    ``character_id`` participates in the hash so a different character
+    pick on the same key is correctly flagged as ``idempotency_conflict``.
     """
     canonical = json.dumps(
-        {"chapter_id": str(body.chapter_id), "content": body.content},
+        {
+            "chapter_id": str(body.chapter_id),
+            "content": body.content,
+            "character_id": body.character_id,
+        },
         sort_keys=True,
         ensure_ascii=False,
     )
@@ -252,6 +265,7 @@ async def post_twists_submit(
             user_id=int(user.id),
             chapter_public_id=body.chapter_id,
             content=body.content,
+            character_id=body.character_id,
             idempotency_key=idempotency_key,
             idempotency_body_hash=body_hash,
         )
@@ -331,6 +345,22 @@ async def post_twists_submit(
             status=409,
             code="idempotency_conflict",
             title="Idempotency-Key was reused with a different request body",
+        )
+    except InvalidCharacter as exc:
+        _log.info(
+            "twist_submit",
+            outcome="error",
+            user_id=int(user.id),
+            code="invalid_character",
+            status=422,
+            character_id=exc.character_id,
+        )
+        return _problem(
+            request=request,
+            status=422,
+            code="invalid_character",
+            title="character_id is unknown or hidden",
+            extra={"character_id": exc.character_id},
         )
     except TwistLockBusy:
         _log.info(

@@ -45,6 +45,7 @@ from app.domain.cycle_executor import KillSwitchActive
 from app.domain.twist_content import normalize as normalize_content
 from app.domain.twist_quota import QuotaState
 from app.domain.windows import CycleTimes, compute_windows
+from app.infra.characters_repo import CharactersRepo
 from app.infra.content_repo import ContentRepo
 from app.infra.idempotency_repo import IdempotencyRecord, IdempotencyRepo
 from app.infra.system_flags_repo import SystemFlagsRepo
@@ -56,6 +57,7 @@ __all__ = [
     "DeleteResult",
     "ForbiddenNotOwner",
     "IdempotencyConflict",
+    "InvalidCharacter",
     "KillSwitchActive",
     "ListMineResult",
     "OverQuota",
@@ -129,6 +131,20 @@ class AlreadyFiltered(Exception):
     now ``approved`` or ``rejected_*``), so it is immutable. Mapped to
     409 ``already_filtered``.
     """
+
+
+class InvalidCharacter(Exception):
+    """The submitted ``character_id`` does not point at an active character.
+
+    Either the id does not exist or the character is hidden
+    (``active=FALSE``). Mapped to 422 ``invalid_character`` by the HTTP
+    layer. Raised **before** quota consumption — a rejected submission
+    for an invalid character does NOT burn the user's quota.
+    """
+
+    def __init__(self, character_id: int) -> None:
+        self.character_id = character_id
+        super().__init__(f"character_id={character_id} is not active")
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +265,16 @@ class TwistSubmissionService:
         content: str,
         idempotency_key: str,
         idempotency_body_hash: str,
+        character_id: int | None = None,
     ) -> SubmitResult:
         """Submit a twist proposal for the currently-live chapter.
+
+        ``character_id`` (Ronda 7 / module 013) is the catalog id chosen
+        by the user. The HTTP layer always supplies an explicit value;
+        the service treats ``None`` as "no character preference" and lets
+        the repo's INSERT fall back to the lowest-``sort_order`` active
+        character. This keeps legacy tests (written before the FK) working
+        unmodified; production code always passes the explicit id.
 
         Raises
         ------
@@ -261,6 +285,10 @@ class TwistSubmissionService:
             ``RECEPCION_IDEAS``, or ``now >= submit_until``.
         ChapterMismatch
             ``chapter_public_id`` does not match the currently live chapter.
+        InvalidCharacter
+            ``character_id`` was supplied but is unknown or inactive.
+            Mapped to 422 by the HTTP layer. Raised before quota
+            consumption. Never raised when ``character_id is None``.
         OverQuota
             User has used the per-chapter quota (deleted twists count too,
             FR-004).
@@ -278,6 +306,7 @@ class TwistSubmissionService:
             idem_repo = IdempotencyRepo(session)
             content_repo = ContentRepo(session)
             twists_repo = TwistsRepo(session)
+            chars_repo = CharactersRepo(session)
 
             # 1. Kill-switch (cached 30 s).
             await self._ensure_not_killed(flags_repo)
@@ -316,6 +345,17 @@ class TwistSubmissionService:
             # 5. Normalize content (raises ValueError → HTTP 422).
             normalized = normalize_content(content)
 
+            # 5b. Character must exist and be active when supplied
+            # (raises InvalidCharacter → HTTP 422). Done before quota so a
+            # rejected submission does not burn the user's quota. When
+            # the caller passes ``None`` the repo falls back to the
+            # lowest-sort_order active character (legacy-test path).
+            if (
+                character_id is not None
+                and await chars_repo.get_by_id_if_active(character_id) is None
+            ):
+                raise InvalidCharacter(character_id)
+
             # 6. Mutation: lock → recount → INSERT → idem-cache.
             # The advisory lock + counts + writes share commit/rollback
             # semantics with the pre-check queries above.
@@ -333,6 +373,7 @@ class TwistSubmissionService:
                 chapter_id=chapter_id,
                 user_id=user_id,
                 content=normalized,
+                character_id=character_id,
             )
 
             response_payload = _build_response_payload(
@@ -537,6 +578,7 @@ def _build_response_payload(
             "content": twist.content,
             "status": twist.status,
             "submitted_at": twist.submitted_at.isoformat(),
+            "character_id": int(twist.character_id),
         },
         "quota_used": quota_used,
         "quota_max": quota_max,
@@ -556,4 +598,5 @@ def _twist_from_cached(cached: dict[str, Any]) -> Twist:
         submitted_at=datetime.fromisoformat(str(cached["submitted_at"])),
         reviewed_at=None,
         deleted_at=None,
+        character_id=int(cached["character_id"]),
     )
