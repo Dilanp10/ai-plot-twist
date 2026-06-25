@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -50,6 +51,8 @@ from app.infra.r2_uploader import R2Uploader
 from app.infra.webpush_sender import WebPushSender
 from app.logging import configure_logging, get_logger
 from app.middleware.request_id import RequestIdMiddleware
+from app.providers.i2v.fake import FakeImageToVideoProvider
+from app.providers.i2v.router import ImageToVideoProviderRouter
 from app.providers.image import ImageProviderRouter, chain_for_env
 from app.providers.llm import (
     GeminiProvider,
@@ -186,8 +189,6 @@ def _load_placeholder_video_bytes(path_str: str) -> bytes:
     the file vanishes we use the in-process 136-byte sentinel rather than
     crashing the boot — a degraded placeholder beats a downed cycle.
     """
-    from pathlib import Path
-
     candidates = [
         Path(path_str),
         Path("/app") / path_str,
@@ -341,6 +342,37 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
     app.state.placeholder_video_url = placeholder_video_url
     app.state.placeholder_video_bytes = placeholder_video_bytes
 
+    # -------------------------------------------------------------------------
+    # Layer A (I2V) wiring — Delta 008
+    # Always wired with FakeImageToVideoProvider in dev; Kling provider (Delta
+    # 012) replaces Fake when KLING_API_KEY is set and the subscription is active.
+    # Layer A is enabled only when intro_bg_path + outro_path exist on disk.
+    # -------------------------------------------------------------------------
+    intro_bg_path = Path(settings.generation_intro_bg_path)
+    outro_path = Path(settings.generation_outro_path)
+    i2v_providers = [FakeImageToVideoProvider()]
+    i2v_router: ImageToVideoProviderRouter | None = None
+    if intro_bg_path.exists() and outro_path.exists():
+        i2v_router = ImageToVideoProviderRouter(
+            providers=i2v_providers,
+            check_health=False,
+        )
+        _log.info(
+            "i2v_router_wired",
+            provider=i2v_providers[0].name,
+            intro_bg_path=str(intro_bg_path),
+            outro_path=str(outro_path),
+        )
+    else:
+        _log.warning(
+            "i2v_layer_a_disabled",
+            intro_bg_exists=intro_bg_path.exists(),
+            outro_exists=outro_path.exists(),
+            detail="Layer A (I2V) disabled — intro_bg.png or outro.mp4 not found.",
+        )
+
+    app.state.i2v_router = i2v_router
+
     real_side_effect = build_generation_pipeline_side_effect(
         get_session_factory(),
         scriptwriter,
@@ -356,6 +388,14 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
         clip_concurrency=settings.generation_clip_concurrency,
         clip_duration_s=settings.generation_clip_duration_s,
         video_pipeline_enabled=settings.video_pipeline_enabled,
+        i2v_router=i2v_router,
+        intro_bg_path=intro_bg_path if i2v_router is not None else None,
+        outro_path=outro_path if i2v_router is not None else None,
+        r2_public_base_url=settings.r2_public_base_url,
+        intro_duration_s=settings.generation_intro_duration_s,
+        outro_duration_s=settings.generation_outro_duration_s,
+        intro_font_size=settings.generation_intro_font_size,
+        intro_font_color=settings.generation_intro_font_color,
     )
     side_effects.register("generation_pipeline", real_side_effect)
     _log.info(
@@ -366,6 +406,7 @@ def _wire_generation_pipeline(app: FastAPI, settings: Settings) -> None:
         video_chain=settings.generation_video_chain_env if video_router else None,
         video_providers=video_router.provider_names if video_router else None,
         t2v_active=video_router is not None,
+        i2v_active=i2v_router is not None,
     )
 
 
