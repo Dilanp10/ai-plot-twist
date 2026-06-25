@@ -1,23 +1,36 @@
-"""CLI: upload-static-assets — push placeholder binaries to Cloudflare R2.
+"""CLI: upload-static-assets — push static binaries to Cloudflare R2.
 
-Module 008 / Task T-017 delta.
+Module 008 / Task T-017 delta. Extended in module 013 / Task T-007 to walk
+``assets/characters/`` and upload each per-character photo to
+``static/characters/<slug>.webp``.
 
 Usage (direct):
     uv run python -m app.scripts.upload_static_assets
 
 Reads R2 credentials and ``R2_PUBLIC_BASE_URL`` from environment / .env.local.
-Uploads each file under ``assets/`` listed below to ``static/<basename>``
-and prints the resulting public URLs so the operator can copy them into
-``GENERATION_PLACEHOLDER_URL`` / ``GENERATION_PLACEHOLDER_VIDEO_URL``.
 
-Exits 0 on success; non-zero on any upload failure or missing credentials.
+Uploads:
+  1. Placeholder binaries (``assets/placeholder.mp4``, ``assets/placeholder.webp``)
+     to ``static/<basename>``.
+  2. Every ``assets/characters/<slug>.webp`` whose basename matches
+     ``^[a-z0-9-]{2,40}\\.webp$`` to ``static/characters/<basename>``.
+     Filenames that do not match are logged and skipped — the run does not
+     fail because of a malformed sibling.
+
+Prints the resulting public URLs so the operator can copy them into env
+vars (`GENERATION_PLACEHOLDER_URL`, `GENERATION_PLACEHOLDER_VIDEO_URL`) or
+verify the catalog photos directly in a browser.
+
+Exits 0 on success; non-zero on missing credentials or upload failure.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,6 +58,11 @@ _ASSETS: tuple[_AssetSpec, ...] = (
     _AssetSpec(filename="placeholder.webp", content_type="image/webp"),
 )
 
+# Module 013 / T-007. Characters live in a dedicated subdir so the bulk
+# walker stays scoped (we never iterate the top-level ``assets/`` listing).
+_CHARACTERS_SUBDIR = "characters"
+_CHARACTER_FILENAME_RE = re.compile(r"^[a-z0-9-]{2,40}\.webp$")
+
 
 async def _upload_one(uploader: R2Uploader, spec: _AssetSpec) -> str | None:
     """Upload one asset; return its public URL or ``None`` if the file is missing."""
@@ -63,6 +81,36 @@ async def _upload_one(uploader: R2Uploader, spec: _AssetSpec) -> str | None:
         url,
     )
     return url
+
+
+def _iter_character_assets(assets_dir: Path) -> Iterator[_AssetSpec]:
+    """Yield one ``_AssetSpec`` per valid file under ``assets/characters/``.
+
+    A "valid" file has a basename matching ``^[a-z0-9-]{2,40}\\.webp$``.
+    Invalid siblings (e.g. ``Foo Bar.webp``, ``.DS_Store``, ``README.md``)
+    are logged at WARNING level and skipped — the script never aborts a
+    run because of a malformed neighbour.
+
+    Filenames are emitted with the ``characters/`` prefix so ``_upload_one``
+    rebuilds the R2 key as ``static/characters/<slug>.webp``.
+    """
+    chars_dir = assets_dir / _CHARACTERS_SUBDIR
+    if not chars_dir.is_dir():
+        _log.info("characters_dir_absent path=%s skip=True", chars_dir)
+        return
+    for path in sorted(chars_dir.iterdir()):
+        if not path.is_file():
+            continue
+        if not _CHARACTER_FILENAME_RE.match(path.name):
+            _log.warning(
+                "character_asset_invalid_name path=%s skip=True",
+                path,
+            )
+            continue
+        yield _AssetSpec(
+            filename=f"{_CHARACTERS_SUBDIR}/{path.name}",
+            content_type="image/webp",
+        )
 
 
 async def _main_async() -> int:
@@ -105,6 +153,22 @@ async def _main_async() -> int:
             url = await _upload_one(uploader, spec)
         except R2UploadError as exc:
             _log.error("asset_upload_failed filename=%s error=%s", spec.filename, exc)
+            return 2
+        if url is not None:
+            any_uploaded = True
+
+    # Module 013 / T-007: per-character photos. Same upload semantics; the
+    # filename carries the ``characters/`` prefix so the R2 key lands at
+    # ``static/characters/<slug>.webp``.
+    for char_spec in _iter_character_assets(_ASSETS_DIR):
+        try:
+            url = await _upload_one(uploader, char_spec)
+        except R2UploadError as exc:
+            _log.error(
+                "asset_upload_failed filename=%s error=%s",
+                char_spec.filename,
+                exc,
+            )
             return 2
         if url is not None:
             any_uploaded = True
