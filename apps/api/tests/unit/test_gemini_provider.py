@@ -92,7 +92,12 @@ async def test_gemini_happy_path_returns_parsed_response() -> None:
     assert kwargs["model"] == "gemini-test"
     assert kwargs["contents"] == "usr"
     assert kwargs["config"].system_instruction == "sys"
-    assert kwargs["config"].response_schema is _Verdict
+    # The provider passes a cleaned dict (not the class) to avoid Gemini
+    # rejecting additionalProperties / $ref / title fields from Pydantic.
+    schema = kwargs["config"].response_schema
+    assert isinstance(schema, dict)
+    assert schema.get("type") == "object"
+    assert set(schema.get("properties", {}).keys()) == {"accept", "reason"}
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +214,7 @@ async def test_gemini_missing_usage_metadata_defaults_to_zero() -> None:
 def test_gemini_default_model_is_pinned() -> None:
     """FR-002 + SDD §2.4: the pin lives in code; bumps are a git change."""
     p = GeminiProvider(api_key="dummy")
-    assert p._model == "gemini-2.0-flash"
+    assert p._model == "gemini-2.5-flash"
 
 
 def test_gemini_constructor_creates_real_client_with_api_key() -> None:
