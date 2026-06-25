@@ -44,17 +44,15 @@ CREATE INDEX idx_characters_active_sort
 | `created_at` | TIMESTAMPTZ | NOT NULL, default NOW() | Audit. |
 | `updated_at` | TIMESTAMPTZ | NOT NULL, default NOW() | Updated by trigger on `active` / `sort_order` changes (see below). |
 
-### Trigger — bump `updated_at`
+### `updated_at` maintenance
 
-```sql
-CREATE TRIGGER characters_set_updated_at
-BEFORE UPDATE OF active, sort_order, display_name, photo_r2_key, aspect_ratio
-ON characters
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-```
+`updated_at` defaults to `NOW()` on INSERT (server default). Subsequent
+UPDATEs **must set it explicitly** in the application layer (`CharactersRepo`
+helpers, the seed migration's `ON CONFLICT DO UPDATE`). No DB trigger.
 
-`set_updated_at()` is defined globally in module 001's migration (already in
-use by `users`, `chapters`, etc.). No new function is created here.
+Rationale: no other table in this project uses a `set_updated_at()` trigger;
+introducing one for a write-rare table inflates schema complexity. The
+seed migration and any future admin endpoints handle the timestamp directly.
 
 ### Index rationale
 

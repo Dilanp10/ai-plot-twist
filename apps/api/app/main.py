@@ -25,6 +25,7 @@ from fastapi import FastAPI
 
 from app.api.auth import router as auth_router
 from app.api.chapters import router as chapters_router
+from app.api.characters import router as characters_router
 from app.api.health import router as health_router
 from app.api.internal_client_log import router as internal_client_log_router
 from app.api.internal_director_replay import router as internal_director_replay_router
@@ -448,6 +449,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(push_router)
     app.include_router(chapters_router)
+    app.include_router(characters_router)
     app.include_router(seasons_router)
     app.include_router(twists_router)
     app.include_router(me_twists_router)
