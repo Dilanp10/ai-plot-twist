@@ -31,6 +31,11 @@ primary_region = "gru"    # São Paulo — closest Fly.io free-tier region to Ar
   ENV  = "prod"
   PORT = "8000"
 
+[deploy]
+  # Run DB migrations before Fly cuts traffic to the new instance.
+  # alembic is on PATH via /app/.venv/bin (see Dockerfile).
+  release_command = "alembic upgrade head"
+
 [http_service]
   internal_port      = 8000
   force_https        = true
