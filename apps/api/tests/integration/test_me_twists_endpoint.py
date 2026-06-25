@@ -301,3 +301,46 @@ async def test_me_twists_endpoint_empty_when_no_live_chapter(
         assert data["quota"] == {"used": 0, "max": 3, "remaining": 3}
     finally:
         await cleanup(setup_session, season_id, (user_id, code))
+
+
+async def test_me_twists_endpoint_includes_character_block(
+    setup_session: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Each item in ``GET /me/twists`` includes a nested ``character`` block.
+
+    Verifies FR-NEW-2 from the delta-i2v-character spec: ``id``, ``slug``,
+    ``display_name``, and ``photo_url`` are all present and non-empty.
+    Uses the seeded character id=1 (messi, sort_order=10).
+    """
+    season_id, _, chapter_public_id = await make_active_recepcion_setup(
+        setup_session, "me-ep-char-001"
+    )
+    user_id, code, _, token = await _make_authed_user(setup_session)
+    await setup_session.commit()
+    clear_flags_cache()
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=_app_with_overrides()),
+            base_url="http://test",
+        ) as client:
+            await _submit_via_endpoint(
+                client, token, chapter_public_id, "propuesta con personaje"
+            )
+            resp = await client.get(
+                "/api/v1/me/twists", headers=_auth_header(token)
+            )
+
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert len(items) == 1
+
+        char = items[0]["character"]
+        assert char is not None, "character block must be present"
+        assert char["id"] == 1
+        assert char["slug"] == "messi"
+        assert char["display_name"] == "Lionel Messi"
+        assert char["photo_url"].endswith("static/characters/messi.webp")
+    finally:
+        await cleanup(setup_session, season_id, (user_id, code))

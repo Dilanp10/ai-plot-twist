@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict
 from app.api.twists import (
     TwistMineDTO,
     _problem,
-    _twist_to_dto,
+    _twist_with_char_to_dto,
     get_twist_submission_service,
 )
 from app.domain.twist_submission import (
@@ -36,6 +36,7 @@ from app.domain.twist_submission import (
 from app.infra.users_repo import UserRow
 from app.logging import get_logger
 from app.middleware.jwt_auth import require_user
+from app.settings import Settings, get_settings
 
 _log = get_logger(__name__)
 
@@ -84,6 +85,7 @@ async def get_me_twists(
     request: Request,
     user: UserRow = Depends(require_user),
     service: TwistSubmissionService = Depends(get_twist_submission_service),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     """Return the caller's twists for the active chapter.
 
@@ -113,8 +115,9 @@ async def get_me_twists(
             retry_after=_RETRY_AFTER_SECONDS,
         )
 
+    public_base = settings.r2_public_base_url or ""
     dto = MeTwistsResponseDTO(
-        items=[_twist_to_dto(t) for t in result.items],
+        items=[_twist_with_char_to_dto(t, public_base) for t in result.items],
         quota=QuotaDTO(
             used=result.quota.used,
             max=result.quota.max,

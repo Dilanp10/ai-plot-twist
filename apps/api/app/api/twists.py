@@ -45,6 +45,7 @@ from app.domain.twist_submission import (
     WindowClosed,
 )
 from app.domain.windows import CycleTimes
+from app.infra.twists_repo import TwistWithChar
 from app.infra.users_repo import UserRow
 from app.logging import get_logger
 from app.middleware.jwt_auth import require_user
@@ -103,6 +104,15 @@ class SubmitRequest(_Frozen):
     character_id: int = Field(..., ge=1)
 
 
+class CharacterInTwistDTO(_Frozen):
+    """Character block nested inside each item of ``GET /me/twists``."""
+
+    id: int
+    slug: str
+    display_name: str
+    photo_url: str
+
+
 class TwistMineDTO(_Frozen):
     """Public projection of a user's own twist row."""
 
@@ -112,6 +122,7 @@ class TwistMineDTO(_Frozen):
     director_reason: str | None = None
     submitted_at: str  # ISO 8601 UTC
     deleted_at: str | None = None
+    character: CharacterInTwistDTO | None = None
 
 
 class SubmitResponseDTO(_Frozen):
@@ -199,6 +210,30 @@ def _twist_to_dto(twist: Any) -> TwistMineDTO:
         director_reason=twist.director_reason,
         submitted_at=twist.submitted_at.isoformat(),
         deleted_at=twist.deleted_at.isoformat() if twist.deleted_at else None,
+    )
+
+
+def _twist_with_char_to_dto(item: TwistWithChar, public_base: str) -> TwistMineDTO:
+    """Convert a ``TwistWithChar`` to ``TwistMineDTO`` including the character block."""
+    char_dto: CharacterInTwistDTO | None = None
+    if item.character is not None:
+        base = public_base.rstrip("/")
+        key = item.character.photo_r2_key.lstrip("/")
+        char_dto = CharacterInTwistDTO(
+            id=item.twist.character_id,
+            slug=item.character.slug,
+            display_name=item.character.display_name,
+            photo_url=f"{base}/{key}",
+        )
+    twist = item.twist
+    return TwistMineDTO(
+        public_id=twist.public_id,
+        content=twist.content,
+        status=twist.status,
+        director_reason=twist.director_reason,
+        submitted_at=twist.submitted_at.isoformat(),
+        deleted_at=twist.deleted_at.isoformat() if twist.deleted_at else None,
+        character=char_dto,
     )
 
 

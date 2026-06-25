@@ -49,7 +49,7 @@ from app.infra.characters_repo import CharactersRepo
 from app.infra.content_repo import ContentRepo
 from app.infra.idempotency_repo import IdempotencyRecord, IdempotencyRepo
 from app.infra.system_flags_repo import SystemFlagsRepo
-from app.infra.twists_repo import Twist, TwistLockBusy, TwistsRepo
+from app.infra.twists_repo import Twist, TwistLockBusy, TwistsRepo, TwistWithChar
 
 __all__ = [
     "AlreadyFiltered",
@@ -202,14 +202,15 @@ class ListMineResult:
     Attributes
     ----------
     items:
-        The user's twists for the currently live chapter, ordered by
+        The user's twists for the currently live chapter paired with their
+        character snapshots (LEFT JOIN from ``characters``), ordered by
         ``submitted_at`` ASC. Includes ``deleted_by_user`` rows so the
         ``/me/twists`` UI can show the full history.
     quota:
         Snapshot derived from the list length (used = len(items)).
     """
 
-    items: list[Twist]
+    items: list[TwistWithChar]
     quota: QuotaState
 
 
@@ -520,7 +521,7 @@ class TwistSubmissionService:
             # `limit = max + 1` is defensive: under the advisory lock we
             # should never exceed `max` rows, but if a bug ever lets us
             # over-quota, surface it instead of silently truncating.
-            items = await twists_repo.list_for_user_chapter(
+            items = await twists_repo.list_for_user_chapter_with_character(
                 user_id=user_id,
                 chapter_id=payload.chapter_id,
                 limit=self._max + 1,

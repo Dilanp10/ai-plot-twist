@@ -72,6 +72,33 @@ class Twist:
 
 
 @dataclass(frozen=True)
+class CharacterSnap:
+    """Denormalized character fields joined from the ``characters`` table.
+
+    Returned by :meth:`TwistsRepo.list_for_user_chapter_with_character`
+    so the ``GET /me/twists`` endpoint can include the ``character`` block
+    without a second round-trip.
+    """
+
+    slug: str
+    display_name: str
+    photo_r2_key: str
+
+
+@dataclass(frozen=True)
+class TwistWithChar:
+    """A twist row paired with its character snapshot (LEFT JOIN result).
+
+    ``character`` is ``None`` only if the FK target is unexpectedly missing;
+    with the ``NOT NULL`` constraint on ``twists.character_id`` this should
+    never happen in practice.
+    """
+
+    twist: Twist
+    character: CharacterSnap | None
+
+
+@dataclass(frozen=True)
 class VerdictUpdate:
     """One verdict to persist via :meth:`TwistsRepo.update_status_bulk`.
 
@@ -252,6 +279,48 @@ class TwistsRepo:
             {"user_id": user_id, "chapter_id": chapter_id, "limit": limit},
         )
         return [_map_row(row) for row in result.mappings()]
+
+    async def list_for_user_chapter_with_character(
+        self,
+        user_id: int,
+        chapter_id: int,
+        limit: int,
+    ) -> list[TwistWithChar]:
+        """Like :meth:`list_for_user_chapter` but LEFT JOINs ``characters``.
+
+        Returns each twist paired with its character snapshot so the
+        ``GET /me/twists`` response can include the ``character`` block
+        in a single query.
+        """
+        result = await self._s.execute(
+            sa.text(
+                "SELECT "
+                "t.id, t.public_id, t.chapter_id, t.user_id, t.content, t.status, "
+                "t.director_reason, t.submitted_at, t.reviewed_at, t.deleted_at, "
+                "t.character_id, "
+                "c.slug AS char_slug, "
+                "c.display_name AS char_display_name, "
+                "c.photo_r2_key AS char_photo_r2_key "
+                "FROM twists t "
+                "LEFT JOIN characters c ON c.id = t.character_id "
+                "WHERE t.user_id = :user_id AND t.chapter_id = :chapter_id "
+                "ORDER BY t.submitted_at ASC "
+                "LIMIT :limit"
+            ),
+            {"user_id": user_id, "chapter_id": chapter_id, "limit": limit},
+        )
+        out: list[TwistWithChar] = []
+        for row in result.mappings():
+            twist = _map_row(row)
+            char_snap: CharacterSnap | None = None
+            if row["char_slug"] is not None:
+                char_snap = CharacterSnap(
+                    slug=str(row["char_slug"]),
+                    display_name=str(row["char_display_name"]),
+                    photo_r2_key=str(row["char_photo_r2_key"]),
+                )
+            out.append(TwistWithChar(twist=twist, character=char_snap))
+        return out
 
     async def lock_user_chapter(
         self, user_id: int, chapter_id: int
