@@ -180,6 +180,28 @@ class Settings(BaseSettings):
     # sentinel and logs a warning at boot.
     generation_placeholder_video_path: str = "assets/placeholder.mp4"
 
+    # ── Delta 008 — I2V / Layer A (generation pipeline) ────────────────────
+    # Public URL of the intro background image (PNG). If None, Layer A is
+    # disabled and the pipeline falls through to Layer B (T2V).
+    generation_intro_bg_url: str | None = None
+    # Public URL of the 2-second outro MP4. If None, Layer A is disabled.
+    generation_outro_url: str | None = None
+    # Filesystem path of intro_bg.png (used when running locally without R2).
+    generation_intro_bg_path: str = "assets/intro_bg.png"
+    # Filesystem path of outro.mp4 (used when running locally without R2).
+    generation_outro_path: str = "assets/outro.mp4"
+    # Duration of the intro clip in seconds (default 2s).
+    generation_intro_duration_s: float = 2.0
+    # Duration of the outro clip in seconds (default 2s).
+    generation_outro_duration_s: float = 2.0
+    # drawtext font size for the intro cliffhanger overlay.
+    generation_intro_font_size: int = 64
+    # drawtext font color for the intro cliffhanger overlay.
+    generation_intro_font_color: str = "white"
+    # Kling API key for the I2V provider (Delta 012). When absent the pipeline
+    # uses FakeImageToVideoProvider (no-op, returns placeholder bytes).
+    kling_api_key: str | None = None
+
     # ── Module 011 (web push) ──────────────────────────────────────────────
     # VAPID identity. Both required for the real fan-out side-effect.
     # Missing either keeps the no-op stub registered so the FSM still

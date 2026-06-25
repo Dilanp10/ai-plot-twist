@@ -268,3 +268,149 @@ def _mux_video_audio(
         )
         .run(quiet=True, overwrite_output=True)
     )
+
+
+# ---------------------------------------------------------------------------
+# Layer A — 14-second I2V composition (Delta 008)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StitchLayerAResult:
+    """Outcome of a successful :func:`stitch_layer_a` run.
+
+    The 14-second video is: intro (2s) + I2V body (10s) + outro (2s).
+
+    Attributes
+    ----------
+    video_url:
+        R2 public URL of the uploaded mp4.
+    video_duration_s:
+        Declared total duration in seconds (intro + body + outro).
+    video_bytes_len:
+        File size in bytes.
+    """
+
+    video_url: str
+    video_duration_s: float
+    video_bytes_len: int
+
+
+def _concat_layer_a_sync(
+    intro_mp4: Path,
+    body_mp4: Path,
+    outro_mp4: Path,
+    out_path: Path,
+) -> None:
+    """Concat intro + body + outro into a single mp4 (stream copy).
+
+    Runs inside :func:`asyncio.to_thread` — do NOT ``await`` here.
+    All three inputs must have compatible video streams (same codec, SAR,
+    and pixel format).  The I2V body and outro are expected to already be
+    libx264/yuv420p; the intro is rendered the same way by ``render_intro``.
+    """
+    concat_list = out_path.parent / "layer_a_concat.txt"
+    concat_list.write_text(
+        "\n".join(
+            f"file '{p.as_posix()}'"
+            for p in [intro_mp4, body_mp4, outro_mp4]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    try:
+        (
+            ffmpeg
+            .input(str(concat_list), format="concat", safe=0)
+            .output(str(out_path), c="copy")
+            .overwrite_output()
+            .run(capture_stdout=True, capture_stderr=True)
+        )
+    except ffmpeg.Error as exc:
+        stderr = exc.stderr.decode(errors="replace") if exc.stderr else ""
+        raise StitchError(f"ffmpeg layer-A concat failed: {stderr[:500]}") from exc
+
+
+async def stitch_layer_a(
+    *,
+    intro_mp4: Path,
+    body_mp4: Path,
+    outro_mp4: Path,
+    tmp_dir: Path,
+    uploader: R2Uploader,
+    season_slug: str,
+    chapter_public_id: UUID,
+) -> StitchLayerAResult:
+    """Concat intro + I2V body + outro and upload to R2.
+
+    Parameters
+    ----------
+    intro_mp4:
+        2-second intro rendered by :func:`intro_overlay.render_intro`.
+    body_mp4:
+        10-second I2V body clip (local temp file written by ``run_i2v``).
+    outro_mp4:
+        2-second outro from ``assets/outro.mp4`` (copied to tmp_dir by
+        the coordinator before calling this function).
+    tmp_dir:
+        Temp directory.  Output files are written here; cleanup is the
+        caller's responsibility.
+    uploader:
+        Pre-configured R2 uploader.
+    season_slug:
+        URL-safe season identifier for the R2 path.
+    chapter_public_id:
+        Chapter UUID for the R2 path.
+
+    Returns
+    -------
+    StitchLayerAResult
+
+    Raises
+    ------
+    StitchError
+        ffmpeg concat failure or R2 upload error.
+    """
+    out_path = tmp_dir / "layer_a.mp4"
+
+    logger.info(
+        "stitch_layer_a_start intro=%s body=%s outro=%s",
+        intro_mp4.name,
+        body_mp4.name,
+        outro_mp4.name,
+    )
+
+    await asyncio.to_thread(
+        _concat_layer_a_sync,
+        intro_mp4,
+        body_mp4,
+        outro_mp4,
+        out_path,
+    )
+
+    if not out_path.exists():
+        raise StitchError("stitch_layer_a: ffmpeg produced no output")
+
+    chapter_bytes = out_path.read_bytes()
+    if not chapter_bytes:
+        raise StitchError("stitch_layer_a: ffmpeg produced empty output")
+
+    digest = hashlib.sha256(chapter_bytes).hexdigest()[:8]
+    r2_key = f"seasons/{season_slug}/{chapter_public_id}/chapter-{digest}.mp4"
+
+    try:
+        video_url = await uploader.upload(r2_key, chapter_bytes, "video/mp4")
+    except R2UploadError as exc:
+        raise StitchError(f"R2 upload failed: {exc}") from exc
+
+    logger.info(
+        "stitch_layer_a_done video_url=%s bytes=%d",
+        video_url,
+        len(chapter_bytes),
+    )
+
+    return StitchLayerAResult(
+        video_url=video_url,
+        video_duration_s=14.0,
+        video_bytes_len=len(chapter_bytes),
+    )

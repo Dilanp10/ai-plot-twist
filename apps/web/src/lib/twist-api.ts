@@ -27,6 +27,13 @@ export type TwistStatus =
   | 'rejected_spam'
   | 'deleted_by_user';
 
+export interface CharacterInTwist {
+  id: number;
+  slug: string;
+  display_name: string;
+  photo_url: string;
+}
+
 export interface TwistMine {
   public_id: string;
   content: string;
@@ -34,6 +41,7 @@ export interface TwistMine {
   director_reason?: string | null;
   submitted_at: string; // ISO 8601 UTC
   deleted_at?: string | null;
+  character?: CharacterInTwist | null;
 }
 
 export interface Quota {
@@ -97,6 +105,7 @@ const ME_TWISTS_URL = '/api/v1/me/twists';
 export async function submitTwist(
   chapterId: string,
   content: string,
+  characterId: number,
   idempotencyKey: string = freshIdempotencyKey(),
 ): Promise<ApiResult<SubmitResponse>> {
   return apiFetch<SubmitResponse>(SUBMIT_URL, {
@@ -105,7 +114,7 @@ export async function submitTwist(
       'Content-Type': 'application/json',
       'Idempotency-Key': idempotencyKey,
     },
-    body: JSON.stringify({ chapter_id: chapterId, content }),
+    body: JSON.stringify({ chapter_id: chapterId, content, character_id: characterId }),
   });
 }
 

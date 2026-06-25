@@ -87,6 +87,20 @@
         <ul>
           {#each twistStore.mine as twist (twist.public_id)}
             <li class="item kind-{statusKind(twist.status)}">
+              {#if twist.character}
+                <div class="char-row">
+                  <img
+                    class="char-thumb"
+                    src={twist.character.photo_url}
+                    alt={twist.character.display_name}
+                    onerror={(e) => {
+                      const img = e.currentTarget as HTMLImageElement;
+                      img.src = `https://placehold.co/32x32?text=${encodeURIComponent(twist.character!.slug)}`;
+                    }}
+                  />
+                  <span class="char-name">{twist.character.display_name}</span>
+                </div>
+              {/if}
               <p class="content-text">{twist.content}</p>
               <div class="row">
                 <span class="badge">{STATUS_LABELS[twist.status]}</span>
@@ -170,6 +184,23 @@
   .item {
     padding: 0.5rem 0;
     border-top: 1px solid #eee;
+  }
+  .char-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.25rem;
+  }
+  .char-thumb {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+  .char-name {
+    font-size: 0.78rem;
+    color: #555;
   }
   .content-text {
     margin: 0 0 0.25rem 0;

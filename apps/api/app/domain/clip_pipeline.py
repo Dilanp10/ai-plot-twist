@@ -28,9 +28,12 @@ from pathlib import Path
 from uuid import UUID
 
 from app.domain.scriptwriter_response import Clip
+from app.domain.scriptwriter_response_v3 import Scene
 from app.domain.seed_derivation import stable_hash
 from app.domain.tts_synthesizer import synthesize
 from app.infra.r2_uploader import R2Uploader, R2UploadError
+from app.providers.i2v.base import I2VProviderError, I2VRequest, I2VResult
+from app.providers.i2v.router import ImageToVideoProviderRouter
 from app.providers.video import (
     VideoProviderError,
     VideoProviderRouter,
@@ -246,4 +249,142 @@ async def render_clip(
         duration_s=video_result.duration_s,
         provider_used=video_result.provider,
         ok=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Layer A — I2V body clip (Delta 008)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class I2VBodyResult:
+    """Outcome of a successful I2V body clip render.
+
+    Attributes
+    ----------
+    body_mp4:
+        Local path to the 10-second body clip written to ``tmp_dir``.
+    duration_s:
+        Actual clip duration reported by the provider.
+    provider_used:
+        Canonical provider identifier.
+    tts_path:
+        Local path to the narration mp3, or ``None`` if TTS failed.
+    """
+
+    body_mp4: Path
+    duration_s: float
+    provider_used: str
+    tts_path: str | None
+
+
+async def run_i2v(
+    *,
+    scene: Scene,
+    chapter_id: int,
+    image_url: str,
+    i2v_router: ImageToVideoProviderRouter,
+    uploader: R2Uploader,
+    tts_voice: str,
+    placeholder_bytes: bytes,
+    tmp_dir: Path,
+    duration_s: float = 10.0,
+) -> I2VBodyResult:
+    """Render the 10-second I2V body clip and synthesize narration TTS.
+
+    Parameters
+    ----------
+    scene:
+        The single ``Scene`` from ``ScriptwriterResponseV3`` carrying
+        the motion prompt and narration text.
+    chapter_id:
+        Internal chapter id (for seed derivation only).
+    image_url:
+        Public HTTPS URL of the winner character's photo (R2 CDN URL).
+    i2v_router:
+        Pre-configured I2V provider router.
+    uploader:
+        Pre-configured R2 uploader (reserved for future multi-part uploads;
+        the body clip is embedded in the Layer-A stitch, not uploaded solo).
+    tts_voice:
+        edge-tts voice name.
+    placeholder_bytes:
+        Fallback MP4 bytes if the I2V provider fails.
+    tmp_dir:
+        Temporary directory for this chapter's generation run. Must exist.
+    duration_s:
+        Requested I2V clip duration (default 10 s).
+
+    Returns
+    -------
+    I2VBodyResult
+        ``body_mp4`` always points to a valid local file.  If the I2V provider
+        failed, ``body_mp4`` contains placeholder bytes (caller can still stitch
+        but should log a warning).
+
+    Raises
+    ------
+    I2VProviderError
+        Only propagated when the error is a misconfiguration (the router
+        already implements its own fallback chain).  Normal exhaustion is
+        caught here and returns placeholder bytes instead.
+    """
+    seed = stable_hash(chapter_id, 0)
+    body_tmp = tmp_dir / "i2v_body.mp4"
+
+    logger.info(
+        "i2v_render_started chapter_id=%d seed=%d duration_s=%.1f",
+        chapter_id,
+        seed,
+        duration_s,
+    )
+
+    req = I2VRequest(
+        image_url=image_url,
+        motion_prompt=scene.visual_prompt,
+        duration_s=duration_s,
+        aspect="9:16",
+        seed=seed,
+    )
+
+    ok = True
+    provider_used = "placeholder"
+    actual_duration = 0.0
+
+    try:
+        i2v_result: I2VResult = await i2v_router.generate(req)
+        body_tmp.write_bytes(i2v_result.bytes_)
+        provider_used = i2v_result.provider
+        actual_duration = i2v_result.duration_s
+        logger.info(
+            "i2v_render_done provider=%s latency_ms=%d duration_s=%.1f",
+            i2v_result.provider,
+            i2v_result.latency_ms,
+            i2v_result.duration_s,
+        )
+    except I2VProviderError:
+        logger.warning("i2v_render_failed reason=all_providers_exhausted chapter_id=%d", chapter_id)
+        body_tmp.write_bytes(placeholder_bytes)
+        ok = False
+
+    # TTS — best-effort; failure does NOT block the Layer-A path
+    tts_path: str | None = None
+    tts_bytes = await synthesize(scene.narration, voice=tts_voice)
+    if tts_bytes is not None:
+        audio_tmp = tmp_dir / "audio_i2v.mp3"
+        try:
+            audio_tmp.write_bytes(tts_bytes)
+            tts_path = str(audio_tmp)
+            logger.info("i2v_tts_done ok=True")
+        except OSError:
+            logger.warning("i2v_tts_write_failed")
+    else:
+        logger.info("i2v_tts_done ok=False")
+
+    return I2VBodyResult(
+        body_mp4=body_tmp,
+        duration_s=actual_duration if ok else duration_s,
+        provider_used=provider_used,
+        tts_path=tts_path,
     )

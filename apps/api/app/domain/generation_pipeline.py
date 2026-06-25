@@ -60,8 +60,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.domain.clip_pipeline import (
     AllClipsFailedError,
     ClipResult,
+    I2VBodyResult,
     render_clip,
+    run_i2v,
 )
+from app.domain.intro_overlay import IntroRenderError, render_intro
 from app.domain.manifest_builder import (
     GenerationMetadata,
     ManifestClip,
@@ -75,9 +78,17 @@ from app.domain.scriptwriter import Scriptwriter
 from app.domain.scriptwriter_prompts import ChapterBrief, ScriptContext, SeasonBrief
 from app.domain.scriptwriter_response import Clip, ScriptwriterResponse
 from app.domain.scriptwriter_response_v1 import Panel as _PanelV1
-from app.domain.stitch_pipeline import StitchError, StitchResult, stitch_clips
+from app.domain.scriptwriter_response_v3 import ScriptwriterResponseV3
+from app.domain.stitch_pipeline import (
+    StitchError,
+    StitchLayerAResult,
+    StitchResult,
+    stitch_clips,
+    stitch_layer_a,
+)
 from app.domain.winner_selector import WinnerPick, pick_winner
 from app.infra.r2_uploader import R2Uploader
+from app.providers.i2v.router import ImageToVideoProviderRouter
 from app.providers.image import ImageProviderRouter
 from app.providers.video import VideoProviderRouter
 
@@ -123,6 +134,9 @@ class _PipelineCtx:
     winner_pick: WinnerPick
     current_day_index: int
     new_chapter_public_id: UUID
+    # R2 key of the winner character photo (None if no character set or
+    # winner twist has no character_id). Used by Layer A (I2V).
+    winner_character_r2_key: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -206,15 +220,23 @@ async def _load_ctx_from_db(
     winner_pick = await pick_winner(session, chapter_id)
 
     winner_content: str | None = None
+    winner_character_r2_key: str | None = None
     if winner_pick.winner_twist_id is not None:
         twist_row = (
             await session.execute(
-                sa.text("SELECT content FROM twists WHERE id = :tid"),
+                sa.text(
+                    "SELECT t.content, c.photo_r2_key AS char_photo "
+                    "FROM twists t "
+                    "LEFT JOIN characters c ON c.id = t.character_id "
+                    "WHERE t.id = :tid"
+                ),
                 {"tid": winner_pick.winner_twist_id},
             )
         ).mappings().one_or_none()
         if twist_row is not None:
             winner_content = str(twist_row["content"])
+            if twist_row["char_photo"] is not None:
+                winner_character_r2_key = str(twist_row["char_photo"])
 
     # --- Cycle id ---
     cycle_row = (
@@ -244,6 +266,7 @@ async def _load_ctx_from_db(
         winner_pick=winner_pick,
         current_day_index=current_day_index,
         new_chapter_public_id=uuid4(),
+        winner_character_r2_key=winner_character_r2_key,
     )
 
 
@@ -254,7 +277,8 @@ async def _persist_new_chapter(
     season_id: int,
     next_day_index: int,
     new_chapter_public_id: UUID,
-    script: ScriptwriterResponse,
+    title: str,
+    synopsis: str,
     manifest: dict[str, Any],
     status: str,
 ) -> int:
@@ -273,8 +297,8 @@ async def _persist_new_chapter(
             "public_id": str(new_chapter_public_id),
             "season_id": season_id,
             "day_index": next_day_index,
-            "title": script.title,
-            "synopsis": script.synopsis,
+            "title": title,
+            "synopsis": synopsis,
             "manifest_json": json.dumps(manifest),
             "status": status,
         },
@@ -604,6 +628,53 @@ def _build_video_manifest(
     return manifest, status
 
 
+def _build_layer_a_manifest(
+    *,
+    script_v3: ScriptwriterResponseV3,
+    i2v_body: I2VBodyResult,
+    stitch: StitchLayerAResult,
+    winner: WinnerPick,
+    started_at: str,
+    finished_at: str,
+    duration_ms: int,
+) -> tuple[dict[str, Any], str]:
+    """Return ``(manifest_dict, status)`` for the Layer A (I2V) path."""
+    gen_meta = {
+        "scriptwriter_model": "unknown",
+        "scriptwriter_provider": "unknown",
+        "i2v_provider": i2v_body.provider_used,
+        "ffmpeg_stitch": True,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_ms": duration_ms,
+        "degraded": False,
+        "degraded_reasons": [],
+    }
+    manifest: dict[str, Any] = {
+        "schema_version": "3.0",
+        "manifest_kind": "video_i2v",
+        "title": script_v3.title,
+        "synopsis": script_v3.synopsis,
+        "cliffhanger": script_v3.cliffhanger,
+        "video_url": stitch.video_url,
+        "video_duration_s": stitch.video_duration_s,
+        "scene": {
+            "visual_prompt": script_v3.scene.visual_prompt,
+            "narration": script_v3.scene.narration,
+            "mood": script_v3.scene.mood,
+            "provider_used": i2v_body.provider_used,
+        },
+        "tts_url": i2v_body.tts_path,
+        "winner_metadata": {
+            "twist_public_id": str(winner.winner_public_id),
+            "vote_count": winner.vote_count,
+            "tiebreak": winner.tiebreak,
+        },
+        "generation_metadata": gen_meta,
+    }
+    return manifest, "ready"
+
+
 def _build_comic_manifest(
     *,
     script: ScriptwriterResponse,
@@ -689,14 +760,29 @@ async def run_generation_pipeline(
     clip_duration_s: float = 5.0,
     video_pipeline_enabled: bool = True,
     skip_cycle_transition: bool = False,
+    # Layer A (I2V) — Delta 008
+    i2v_router: ImageToVideoProviderRouter | None = None,
+    intro_bg_path: Path | None = None,
+    outro_path: Path | None = None,
+    r2_public_base_url: str | None = None,
+    intro_duration_s: float = 2.0,
+    outro_duration_s: float = 2.0,
+    intro_font_size: int = 64,
+    intro_font_color: str = "white",
 ) -> GenerationSummary:
     """Run the full generation pipeline for *chapter_id*.
 
     See module docstring for the orchestration order.
 
-    The T2V path requires *video_router*, *placeholder_video_url*, and
-    *placeholder_video_bytes*. When any of those is missing the pipeline
-    runs the T2I path directly.
+    Layer A (I2V) → Layer B (T2V) → Layer C (T2I) fallback chain.
+
+    Layer A requires *i2v_router*, *intro_bg_path*, *outro_path*, and a
+    winner with a *character_id*.  When any of those is missing the pipeline
+    skips Layer A.
+
+    Layer B (T2V) requires *video_router*, *placeholder_video_url*, and
+    *placeholder_video_bytes*.  When any of those is missing the pipeline
+    runs Layer C (T2I) directly.
     """
     pipeline_start = time.monotonic()
     started_at_iso = datetime.now(UTC).isoformat()
@@ -715,6 +801,14 @@ async def run_generation_pipeline(
         winner_pick.tiebreak,
     )
 
+    # Resolve winner character image URL (needed for Layer A)
+    winner_character_image_url: str | None = None
+    if ctx.winner_character_r2_key and r2_public_base_url:
+        base = r2_public_base_url.rstrip("/")
+        key = ctx.winner_character_r2_key.lstrip("/")
+        winner_character_image_url = f"{base}/{key}"
+
+    # Draft v2 script (used by Layer B and Layer C)
     script = await scriptwriter.draft(ctx.script_context)
 
     logger.info(
@@ -723,6 +817,14 @@ async def run_generation_pipeline(
         len(script.clips),
     )
 
+    can_run_i2v = (
+        i2v_router is not None
+        and intro_bg_path is not None
+        and intro_bg_path.exists()
+        and outro_path is not None
+        and outro_path.exists()
+        and winner_character_image_url is not None
+    )
     can_run_t2v = (
         video_pipeline_enabled
         and video_router is not None
@@ -735,14 +837,95 @@ async def run_generation_pipeline(
     summary_ok = 0
     summary_degraded = 0
     manifest_kind = "comic_panels"
+    chapter_title = script.title
+    chapter_synopsis = script.synopsis
     fallback_reason: str | None = (
-        None if can_run_t2v else "video_pipeline_disabled"
+        None if (can_run_i2v or can_run_t2v) else "video_pipeline_disabled"
     )
 
     # -------------------------------------------------------------------------
-    # T2V primary path
+    # Layer A (I2V) — 14-second composition (Delta 008)
     # -------------------------------------------------------------------------
-    if can_run_t2v:
+    if can_run_i2v:
+        assert i2v_router is not None
+        assert intro_bg_path is not None
+        assert outro_path is not None
+        assert winner_character_image_url is not None
+
+        tmp_dir_a = Path(tempfile.mkdtemp(prefix=f"chapter-{chapter_id}-a-"))
+        try:
+            script_v3 = await scriptwriter.draft_v3(ctx.script_context)
+            chapter_title = script_v3.title
+            chapter_synopsis = script_v3.synopsis
+
+            i2v_body = await run_i2v(
+                scene=script_v3.scene,
+                chapter_id=chapter_id,
+                image_url=winner_character_image_url,
+                i2v_router=i2v_router,
+                uploader=uploader,
+                tts_voice=tts_voice,
+                placeholder_bytes=placeholder_video_bytes or b"\x00" * 8,
+                tmp_dir=tmp_dir_a,
+            )
+
+            intro_mp4 = tmp_dir_a / "intro.mp4"
+            await render_intro(
+                bg_path=intro_bg_path,
+                out_path=intro_mp4,
+                text=script_v3.cliffhanger,
+                duration_s=intro_duration_s,
+                font_size=intro_font_size,
+                font_color=intro_font_color,
+            )
+
+            outro_tmp = tmp_dir_a / "outro.mp4"
+            shutil.copy(str(outro_path), str(outro_tmp))
+
+            stitch_a = await stitch_layer_a(
+                intro_mp4=intro_mp4,
+                body_mp4=i2v_body.body_mp4,
+                outro_mp4=outro_tmp,
+                tmp_dir=tmp_dir_a,
+                uploader=uploader,
+                season_slug=ctx.season_slug,
+                chapter_public_id=ctx.new_chapter_public_id,
+            )
+
+            finished_at_iso = datetime.now(UTC).isoformat()
+            duration_ms = int((time.monotonic() - pipeline_start) * 1000)
+            manifest, status = _build_layer_a_manifest(
+                script_v3=script_v3,
+                i2v_body=i2v_body,
+                stitch=stitch_a,
+                winner=winner_pick,
+                started_at=started_at_iso,
+                finished_at=finished_at_iso,
+                duration_ms=duration_ms,
+            )
+            manifest_kind = "video_i2v"
+            summary_ok = 1
+            summary_degraded = 0
+            logger.info(
+                "chapter_render_layer layer=A chapter_id=%d provider=%s",
+                chapter_id,
+                i2v_body.provider_used,
+            )
+        except (IntroRenderError, StitchError, Exception) as exc:
+            fallback_reason = "layer_a_failed"
+            logger.warning(
+                "chapter_render_layer_fallback from=A reason=%s chapter_id=%d error=%s",
+                fallback_reason,
+                chapter_id,
+                exc,
+            )
+        finally:
+            shutil.rmtree(tmp_dir_a, ignore_errors=True)
+
+    # -------------------------------------------------------------------------
+    # Layer B (T2V) primary path
+    # -------------------------------------------------------------------------
+    if manifest is None and can_run_t2v:
         assert video_router is not None
         assert placeholder_video_url is not None
         assert placeholder_video_bytes is not None
@@ -832,9 +1015,9 @@ async def run_generation_pipeline(
         finished_at_iso = datetime.now(UTC).isoformat()
         duration_ms = int((time.monotonic() - pipeline_start) * 1000)
 
-        # When the coordinator was never asked to run T2V (no router /
-        # disabled), this is a *native* T2I run, not a fallback — clear
-        # the synthetic reason so ops doesn't see false alarms.
+        # When the coordinator was never asked to run any video path, this is
+        # a *native* T2I run, not a fallback — clear the synthetic reason so
+        # ops doesn't see false alarms.
         native_t2i = fallback_reason == "video_pipeline_disabled"
         manifest, status = _build_comic_manifest(
             script=script,
@@ -859,7 +1042,8 @@ async def run_generation_pipeline(
         season_id=ctx.season_id,
         next_day_index=ctx.script_context.next_day_index,
         new_chapter_public_id=ctx.new_chapter_public_id,
-        script=script,
+        title=chapter_title,
+        synopsis=chapter_synopsis,
         manifest=manifest,
         status=status,
     )
@@ -920,6 +1104,15 @@ def build_generation_pipeline_side_effect(
     clip_concurrency: int = 4,
     clip_duration_s: float = 5.0,
     video_pipeline_enabled: bool = True,
+    # Layer A (I2V) — Delta 008
+    i2v_router: ImageToVideoProviderRouter | None = None,
+    intro_bg_path: Path | None = None,
+    outro_path: Path | None = None,
+    r2_public_base_url: str | None = None,
+    intro_duration_s: float = 2.0,
+    outro_duration_s: float = 2.0,
+    intro_font_size: int = 64,
+    intro_font_color: str = "white",
 ) -> Callable[[int], Awaitable[None]]:
     """Return a ``generation_pipeline`` side-effect bound to its dependencies.
 
@@ -927,6 +1120,9 @@ def build_generation_pipeline_side_effect(
     *video_router* / *placeholder_video_url* / *placeholder_video_bytes*
     are absent (or *video_pipeline_enabled* is False) the closure runs
     the T2I path directly.
+
+    Layer A (I2V) args are also optional; when absent the coordinator skips
+    directly to Layer B (T2V) or Layer C (T2I).
     """
 
     async def _generation_pipeline(chapter_id: int) -> None:
@@ -947,6 +1143,14 @@ def build_generation_pipeline_side_effect(
                 clip_concurrency=clip_concurrency,
                 clip_duration_s=clip_duration_s,
                 video_pipeline_enabled=video_pipeline_enabled,
+                i2v_router=i2v_router,
+                intro_bg_path=intro_bg_path,
+                outro_path=outro_path,
+                r2_public_base_url=r2_public_base_url,
+                intro_duration_s=intro_duration_s,
+                outro_duration_s=outro_duration_s,
+                intro_font_size=intro_font_size,
+                intro_font_color=intro_font_color,
             )
 
     return _generation_pipeline

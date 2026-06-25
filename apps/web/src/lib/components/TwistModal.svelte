@@ -3,17 +3,22 @@
    * Modal for submitting a new twist.
    *
    * Module 005 / Task T-013.
+   * Updated: Delta 010 — adds CharacterPicker and character_id to submission.
    *
    * Props:
    *   - open:      Whether the modal is visible.
    *   - chapterId: The current live chapter's public_id.
    *   - onClose:   Callback fired after submit success OR cancel.
    *
-   * The component is purely presentational over twistStore.submit().
-   * On success it calls onClose(); on error it stays open with a
-   * red error pill so the user can edit + retry.
+   * Flow:
+   *   1. On open, triggers ensureCatalogLoaded() (no-op if already loaded).
+   *   2. User picks a character in CharacterPicker.
+   *   3. User types their idea (≥5 chars, ≤280).
+   *   4. Submit is enabled only when both conditions are met.
+   *   5. On success, twistStore clears selectedCharacterId; modal closes.
    */
   import { twistStore } from '../twist-store.svelte';
+  import CharacterPicker from './CharacterPicker.svelte';
 
   interface Props {
     open: boolean;
@@ -34,14 +39,18 @@
   const tooShort = $derived(content.trim().length < MIN_LEN);
   const overLimit = $derived(content.length > MAX_LEN);
   const canSubmit = $derived(
-    !submitting && !tooShort && !overLimit,
+    !submitting && !tooShort && !overLimit && twistStore.selectedCharacterId !== null,
   );
 
+  $effect(() => {
+    if (props.open) void twistStore.ensureCatalogLoaded();
+  });
+
   async function handleSubmit(): Promise<void> {
-    if (!canSubmit) return;
+    if (!canSubmit || twistStore.selectedCharacterId === null) return;
     submitting = true;
     localError = null;
-    const ok = await twistStore.submit(props.chapterId, content);
+    const ok = await twistStore.submit(props.chapterId, content, twistStore.selectedCharacterId);
     submitting = false;
     if (ok) {
       content = '';
@@ -69,8 +78,15 @@
     <div class="modal">
       <h2 id="twist-modal-title">Tirá una idea</h2>
       <p class="subtitle">
-        ¿Cómo seguiría la historia? Mínimo {MIN_LEN}, máximo {MAX_LEN} caracteres.
+        Elegí un personaje y escribí cómo seguiría la historia.
       </p>
+
+      <CharacterPicker
+        characters={twistStore.catalog}
+        selectedId={twistStore.selectedCharacterId}
+        loading={!twistStore.catalogLoaded}
+        onSelect={(id) => twistStore.selectCharacter(id)}
+      />
 
       <label class="textarea-label" for="twist-content">Tu idea</label>
       <textarea
@@ -91,6 +107,10 @@
         <div id="twist-error" class="error-pill" role="alert">
           {localError}
         </div>
+      {/if}
+
+      {#if twistStore.selectedCharacterId === null && twistStore.catalogLoaded && twistStore.catalog.length > 0}
+        <p class="hint" role="status">Elegí un personaje para poder enviar.</p>
       {/if}
 
       <div class="actions">
@@ -127,6 +147,8 @@
     max-width: 28rem;
     width: 90%;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    max-height: 90vh;
+    overflow-y: auto;
   }
   h2 {
     margin: 0 0 0.5rem 0;
@@ -173,6 +195,11 @@
     border-radius: 0.375rem;
     margin-top: 0.75rem;
     font-size: 0.9rem;
+  }
+  .hint {
+    font-size: 0.8rem;
+    color: #888;
+    margin: 0.5rem 0 0 0;
   }
   .actions {
     display: flex;

@@ -31,6 +31,7 @@ import {
   type Quota,
   type TwistMine,
 } from './twist-api';
+import { listCharacters, type Character } from './character-api';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -54,6 +55,11 @@ let _items = $state<TwistMine[]>([]);
 let _quota = $state<Quota>({ ...DEFAULT_QUOTA });
 let _status = $state<TwistStoreStatus>('idle');
 let _errorMessage = $state<string | null>(null);
+
+// Character catalog (Delta 010)
+let _catalog = $state<Character[]>([]);
+let _catalogLoaded = $state(false);
+let _selectedCharacterId = $state<number | null>(null);
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -85,6 +91,7 @@ function _humanError(status: number, body: unknown): string {
   if (code === 'under_maintenance') return 'El servicio está en mantenimiento.';
   if (code === 'lock_busy') return 'Reintentá en un instante.';
   if (code === 'invalid_content') return 'La idea es demasiado corta o larga.';
+  if (code === 'invalid_character') return 'Ese personaje no está disponible. Elegí otro.';
   return `Error inesperado (HTTP ${status}).`;
 }
 
@@ -129,6 +136,27 @@ export const twistStore = {
     return _errorMessage;
   },
 
+  // Character catalog (Delta 010)
+  get catalog(): Character[] {
+    return _catalog;
+  },
+  get catalogLoaded(): boolean {
+    return _catalogLoaded;
+  },
+  get selectedCharacterId(): number | null {
+    return _selectedCharacterId;
+  },
+
+  selectCharacter(id: number): void {
+    _selectedCharacterId = id;
+  },
+
+  async ensureCatalogLoaded(): Promise<void> {
+    if (_catalogLoaded) return;
+    _catalog = await listCharacters();
+    _catalogLoaded = true;
+  },
+
   /**
    * Fetch /me/twists and populate the store.  Sets status='loading' first.
    */
@@ -156,10 +184,13 @@ export const twistStore = {
   /**
    * Optimistic submit: insert a placeholder, fire the request, reconcile.
    *
+   * On success, clears ``selectedCharacterId`` so the next submission
+   * requires a fresh character pick.
+   *
    * Returns ``true`` on success, ``false`` on any error (the caller can
    * decide whether to surface a toast — ``errorMessage`` is set).
    */
-  async submit(chapterId: string, content: string): Promise<boolean> {
+  async submit(chapterId: string, content: string, characterId: number): Promise<boolean> {
     const tempId = `${_TEMP_ID_PREFIX}${crypto.randomUUID()}`;
     // eslint-disable-next-line svelte/prefer-svelte-reactivity -- one-shot timestamp, not reactive
     const now = new Date().toISOString();
@@ -176,11 +207,12 @@ export const twistStore = {
     _errorMessage = null;
 
     const idemKey = freshIdempotencyKey();
-    const result = await submitTwist(chapterId, content, idemKey);
+    const result = await submitTwist(chapterId, content, characterId, idemKey);
 
     if (result.ok) {
       _replaceItem(tempId, result.data.twist);
       _quota = _quotaFromRemaining(result.data.remaining_submissions);
+      _selectedCharacterId = null;
       return true;
     }
 
@@ -231,5 +263,8 @@ export const twistStore = {
     _quota = { ...DEFAULT_QUOTA };
     _status = 'idle';
     _errorMessage = null;
+    _catalog = [];
+    _catalogLoaded = false;
+    _selectedCharacterId = null;
   },
 };

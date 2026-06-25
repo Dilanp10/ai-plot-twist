@@ -23,6 +23,7 @@ from app.domain.scriptwriter_prompts import (
     render_user_prompt,
 )
 from app.domain.scriptwriter_response import ScriptwriterResponse
+from app.domain.scriptwriter_response_v3 import Scene, ScriptwriterResponseV3
 from app.providers.llm.router import LLMProviderRouter
 
 logger = logging.getLogger(__name__)
@@ -99,3 +100,35 @@ class Scriptwriter:
         )
 
         return cast(ScriptwriterResponse, response.content)
+
+    async def draft_v3(self, context: ScriptContext) -> ScriptwriterResponseV3:
+        """Draft a v3 script (single Scene) by adapting the v2 draft.
+
+        Until a dedicated I2V LLM prompt exists, this delegates to
+        :meth:`draft` (v2) and converts ``clips[0]`` into a ``Scene``.
+        The ``cliffhanger`` is taken from ``context.current_chapter.cliffhanger``
+        (already stored in the DB from the previous chapter).
+
+        Returns
+        -------
+        ScriptwriterResponseV3
+            A valid v3 script derived from the v2 LLM response.
+        """
+        v2 = await self.draft(context)
+
+        first_clip = v2.clips[0] if v2.clips else None
+        scene = Scene(
+            visual_prompt=(first_clip.visual_prompt if first_clip else "A dramatic scene."),
+            narration=(first_clip.narration if first_clip else v2.synopsis[:300]),
+            mood=(first_clip.mood if first_clip else "tense"),
+        )
+
+        cliffhanger = (context.current_chapter.cliffhanger or v2.synopsis)[:120]
+
+        return ScriptwriterResponseV3(
+            title=v2.title,
+            synopsis=v2.synopsis,
+            cliffhanger=cliffhanger,
+            scene=scene,
+            next_cliffhanger_seed=v2.synopsis[:200],
+        )
