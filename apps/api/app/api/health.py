@@ -31,6 +31,12 @@ DB_PING_TIMEOUT_S: float = 1.0
 router = APIRouter(tags=["system"])
 
 
+@router.get("/ping", operation_id="getPing", include_in_schema=False)
+async def ping() -> dict[str, str]:
+    """Lightweight liveness probe — no DB touch, used by Fly health checks."""
+    return {"status": "ok"}
+
+
 class HealthResponse(BaseModel):
     """Health-check payload. ``checks`` is open-ended so modules can add keys."""
 

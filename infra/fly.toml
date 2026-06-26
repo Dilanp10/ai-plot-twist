@@ -47,10 +47,10 @@ primary_region = "gru"    # São Paulo — closest Fly.io free-tier region to Ar
   min_machines_running = 1
 
   [[http_service.checks]]
-    grace_period = "30s"   # Allow time for DB connection pool warmup
+    grace_period = "30s"
     interval     = "15s"
     method       = "GET"
-    path         = "/healthz"
+    path         = "/ping"
     protocol     = "http"
     timeout      = "5s"
 
