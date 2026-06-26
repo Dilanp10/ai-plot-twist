@@ -1,0 +1,91 @@
+name: FSM Tick Scheduler
+
+# Fires the four daily FSM ticks for the AI Plot Twist cycle.
+# ART = UTC-3 (no DST since 1992).
+#
+#   12:00 ART → ESTRENO     → 15:00 UTC
+#   18:00 ART → FILTERING   → 21:00 UTC
+#   23:00 ART → GENERACION  → 02:00 UTC
+#   23:55 ART → WATCHDOG    → 02:55 UTC
+
+on:
+  schedule:
+    - cron: "0 15 * * *"   # ESTRENO
+    - cron: "0 21 * * *"   # FILTERING
+    - cron: "0 2 * * *"    # GENERACION
+    - cron: "55 2 * * *"   # WATCHDOG
+  workflow_dispatch:
+    inputs:
+      tick:
+        description: "Tick to fire manually"
+        required: true
+        type: choice
+        options: [ESTRENO, FILTERING, GENERACION, WATCHDOG]
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Determine tick name
+        id: tick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tick }}" >> "$GITHUB_OUTPUT"
+          else
+            HOUR=$(date -u +%H)
+            MIN=$(date -u +%M)
+            if   [ "$HOUR" = "15" ] && [ "$MIN" = "00" ]; then echo "name=ESTRENO"   >> "$GITHUB_OUTPUT"
+            elif [ "$HOUR" = "21" ] && [ "$MIN" = "00" ]; then echo "name=FILTERING"  >> "$GITHUB_OUTPUT"
+            elif [ "$HOUR" = "02" ] && [ "$MIN" = "00" ]; then echo "name=GENERACION" >> "$GITHUB_OUTPUT"
+            elif [ "$HOUR" = "02" ] && [ "$MIN" = "55" ]; then echo "name=WATCHDOG"   >> "$GITHUB_OUTPUT"
+            else
+              echo "name=UNKNOWN" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Abort if tick unknown
+        if: steps.tick.outputs.name == 'UNKNOWN'
+        run: |
+          echo "No matching tick for current UTC time — skipping."
+          exit 0
+
+      - name: Sign and fire tick
+        if: steps.tick.outputs.name != 'UNKNOWN'
+        env:
+          TICK_SECRET: ${{ secrets.TICK_SECRET }}
+          API_URL: https://ai-plot-twist.fly.dev/api/v1/internal/transition
+        run: |
+          TICK="${{ steps.tick.outputs.name }}"
+          TS=$(date +%s)
+          TRIGGER_ID="gh-cron-${TICK,,}-${TS}"
+
+          BODY=$(python3 -c "
+          import json
+          print(json.dumps({'to': '$TICK', 'ts': $TS, 'trigger_id': '$TRIGGER_ID'}, separators=(',', ':')))
+          ")
+
+          SIG=$(python3 -c "
+          import hashlib, hmac, base64, os
+          secret = os.environ['TICK_SECRET'].encode()
+          body   = '$BODY'.encode()
+          sig    = base64.b64encode(hmac.new(secret, body, hashlib.sha256).digest()).decode()
+          print(sig)
+          ")
+
+          echo "Firing tick: $TICK (trigger_id=$TRIGGER_ID)"
+
+          HTTP_CODE=$(curl -sf -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "$API_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Tick-Signature: $SIG" \
+            -d "$BODY")
+
+          echo "HTTP $HTTP_CODE"
+          cat /tmp/resp.json || true
+
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "202" ]; then
+            echo "Tick failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
