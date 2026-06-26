@@ -9,7 +9,7 @@
 # report-only so we get violations to /internal/client-log without
 # breaking the app if some asset URL was missed. Phase 2 flips this
 # header to enforcing once the violation feed is empty for 7 days.
-  Content-Security-Policy-Report-Only: default-src 'self'; img-src 'self' https://assets.aiplottwist.example data: blob:; media-src 'self' https://assets.aiplottwist.example; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://api.aiplottwist.example; frame-ancestors 'none'; report-uri /api/v1/internal/client-log
+  Content-Security-Policy-Report-Only: default-src 'self'; img-src 'self' https://pub-be7ca6cbc73949b89f94b411796f7bf1.r2.dev data: blob:; media-src 'self' https://pub-be7ca6cbc73949b89f94b411796f7bf1.r2.dev; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; report-uri /api/v1/internal/client-log
 
 # SW must NOT be cached aggressively — the workbox-generated file is
 # the one piece of the bundle whose update kicks off the update
