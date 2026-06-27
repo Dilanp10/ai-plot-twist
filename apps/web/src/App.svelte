@@ -26,6 +26,7 @@
   import { router } from './lib/router.svelte';
   // Eager: onboarding (auth landing) + today (most common landing after auth).
   // Lazy via LazyRoute: vote / me / settings — code-split per FR-006 budget.
+  import Admin from './routes/admin.svelte';
   import Chapter from './routes/chapter.svelte';
   import Onboarding from './routes/onboarding.svelte';
   import Series from './routes/series.svelte';
@@ -80,6 +81,10 @@
   {#if router.current === '/onboarding'}
     <ErrorBoundary>
       <Onboarding />
+    </ErrorBoundary>
+  {:else if router.current === '/admin'}
+    <ErrorBoundary>
+      <Admin />
     </ErrorBoundary>
   {:else}
     <AppShell>

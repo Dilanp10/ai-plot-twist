@@ -83,6 +83,14 @@ class Settings(BaseSettings):
     admin_token: str | None = None
     discord_webhook_url: str | None = None
 
+    # ── Module 014 (admin panel) ────────────────────────────────────────────
+    # Password for the /admin panel. If unset, POST /admin/auth returns 401.
+    admin_password: str | None = None
+    # Email address that receives the "winner ready" notification (Resend).
+    admin_email: str | None = None
+    # Resend API key for the winner notification email.
+    resend_api_key: str | None = None
+
     # ── Cloudflare R2 (optional — safe to leave empty in dev) ───────────────
     r2_account_id: str | None = None
     r2_access_key_id: str | None = None

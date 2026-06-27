@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session, get_session_factory
+from app.email.resend_client import send_generation_email
 from app.domain.cycle_executor import (
     IllegalTransition,
     KillSwitchActive,
@@ -278,6 +279,17 @@ async def _handle_transition(
             cycle_id=result.cycle_id,
             session_factory=get_session_factory(),
             discord_webhook_url=settings.discord_webhook_url,
+        )
+
+    # ── Generation notification email (best-effort, never blocks FSM) ─────
+    if payload.to == "GENERACION":
+        background_tasks.add_task(
+            send_generation_email,
+            session_factory=get_session_factory(),
+            chapter_id=result.chapter_id,
+            resend_api_key=settings.resend_api_key,
+            admin_email=settings.admin_email,
+            r2_public_base_url=settings.r2_public_base_url,
         )
 
     _log.info(

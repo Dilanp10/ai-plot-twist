@@ -24,6 +24,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.chapters import router as chapters_router
 from app.api.characters import router as characters_router
@@ -487,6 +488,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(internal_generation_rerun_router)
     app.include_router(internal_client_log_router)
     app.include_router(internal_push_test_router)
+    app.include_router(admin_router)
     app.include_router(auth_router)
     app.include_router(push_router)
     app.include_router(chapters_router)

@@ -189,6 +189,24 @@ class ChaptersRepo:
             {"id": chapter_id},
         )
 
+    async def set_video_url(self, chapter_id: int, video_url: str) -> bool:
+        """Set ``manifest_json['video_url']`` for *chapter_id*.
+
+        Uses PostgreSQL ``||`` merge to overwrite only the ``video_url`` key
+        while preserving all other manifest fields.
+
+        Returns True if the chapter was found and updated, False if not found.
+        """
+        result = await self._s.execute(
+            sa.text(
+                "UPDATE chapters "
+                "SET manifest_json = manifest_json || jsonb_build_object('video_url', :video_url) "
+                "WHERE id = :id"
+            ),
+            {"id": chapter_id, "video_url": video_url},
+        )
+        return result.rowcount > 0  # type: ignore[return-value]
+
     async def list_by_season(self, season_id: int) -> list[Chapter]:
         """Return all chapters for a season ordered by ``day_index`` ASC."""
         result = await self._s.execute(

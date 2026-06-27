@@ -70,6 +70,37 @@ class R2Uploader:
             region_name="auto",
         )
 
+    def generate_presigned_put_url(
+        self,
+        key: str,
+        expires_in: int = 900,
+        content_type: str = "video/mp4",
+    ) -> tuple[str, str]:
+        """Return ``(upload_url, public_url)`` for a direct browser PUT to R2.
+
+        ``upload_url`` is a presigned S3 PUT URL valid for *expires_in* seconds
+        (default 15 min). The caller gives it to the browser, which PUTs the
+        file directly — no bytes pass through the API server.
+
+        ``public_url`` is the permanent CDN URL the object will have once
+        uploaded (``{public_base_url}/{key}``).
+
+        ``generate_presigned_url`` is a local crypto operation (no network
+        call), so no executor is needed.
+        """
+        upload_url: str = self._client.generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": self._bucket,
+                "Key": key,
+                "ContentType": content_type,
+            },
+            ExpiresIn=expires_in,
+            HttpMethod="PUT",
+        )
+        public_url = f"{self._public_base_url}/{key}"
+        return upload_url, public_url
+
     async def upload(self, key: str, body: bytes, content_type: str) -> str:
         """Upload *body* to R2 at *key* and return its public URL.
 

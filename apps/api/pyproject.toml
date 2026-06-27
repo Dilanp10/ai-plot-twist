@@ -26,6 +26,7 @@ dependencies = [
     "py-vapid>=1.9.4",
     "pywebpush>=2.3.0",
     "ffmpeg-python~=0.2",
+    "resend>=2.32.2",
 ]
 
 [dependency-groups]
