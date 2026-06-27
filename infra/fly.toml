@@ -56,4 +56,4 @@ primary_region = "gru"    # São Paulo — closest Fly.io free-tier region to Ar
 
 [[vm]]
   size   = "shared-cpu-1x"
-  memory = "256mb"
+  memory = "512mb"
