@@ -254,10 +254,15 @@ async def test_no_active_cycle_returns_no_active_cycle(
 # ---------------------------------------------------------------------------
 
 
-async def test_generacion_over_grace_forces_failed(
+async def test_generacion_over_grace_stays_healthy(
     session: AsyncSession,
 ) -> None:
-    """GENERACION with elapsed 90 min > 60 min grace → stuck_generation → FAILED."""
+    """GENERACION never forced to FAILED — manual upload has no time limit (módulo 014).
+
+    Even at 90 min (well past the legacy 60-min grace) the watchdog treats
+    GENERACION as ``ok_in_progress`` and leaves the cycle untouched, because
+    the phase now waits for the operator's manual video upload.
+    """
     season_id, _, cycle_id = await _setup_cycle(
         session, "GENERACION", "gen-stuck-001", entered_before_s=90 * 60
     )
@@ -265,24 +270,14 @@ async def test_generacion_over_grace_forces_failed(
     try:
         result = await check(session, _NOW_UTC)
 
-        assert result.verdict == "stuck_generation"
-        assert result.forced_failed is True
-        assert result.elapsed_seconds is not None
-        assert result.elapsed_seconds >= GENERATION_GRACE_S
+        assert result.verdict == "ok_in_progress"
+        assert result.forced_failed is False
 
-        # Cycle must be FAILED in the DB.
+        # Cycle must remain in GENERACION (not FAILED) in the DB.
         row = await session.execute(
             sa.text("SELECT state FROM cycles WHERE id = :id"), {"id": cycle_id}
         )
-        assert row.scalar_one() == "FAILED"
-
-        # Transition row with verdict payload.
-        tr_rows = await TransitionsRepo(session).get_recent(cycle_id, limit=1)
-        assert tr_rows[0].to_state == "FAILED"
-        assert tr_rows[0].triggered_by == "watchdog"
-        assert tr_rows[0].payload_json is not None
-        assert tr_rows[0].payload_json["verdict"] == "stuck_generation"
-        assert "elapsed_s" in tr_rows[0].payload_json
+        assert row.scalar_one() == "GENERACION"
 
     finally:
         await _cleanup(session, season_id)
@@ -500,9 +495,10 @@ def test_compute_verdict_all_states() -> None:
     from app.domain.watchdog import _compute_verdict
 
     assert _compute_verdict("PENDING_RELEASE", 0) == "ready_for_release"
-    assert _compute_verdict("GENERACION", GENERATION_GRACE_S - 1) == "ok_in_progress"
-    assert _compute_verdict("GENERACION", GENERATION_GRACE_S) == "stuck_generation"
-    assert _compute_verdict("GENERACION", GENERATION_GRACE_S + 1) == "stuck_generation"
+    # GENERACION is always healthy now (manual video upload — no time fence).
+    assert _compute_verdict("GENERACION", 0) == "ok_in_progress"
+    assert _compute_verdict("GENERACION", GENERATION_GRACE_S) == "ok_in_progress"
+    assert _compute_verdict("GENERACION", GENERATION_GRACE_S + 10_000) == "ok_in_progress"
     assert _compute_verdict("FAILED", 999) == "already_failed"
     assert _compute_verdict("VOTACION", 0) == "stuck_voting"
     assert _compute_verdict("FILTERING", 0) == "stuck_filtering"

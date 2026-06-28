@@ -7,10 +7,9 @@ inspects the active cycle.  Depending on the cycle's current state and time
 elapsed since the last state change, it emits a verdict:
 
   ready_for_release  — PENDING_RELEASE (generation finished, healthy)
-  ok_in_progress     — GENERACION, elapsed < 60 min (still running, healthy)
+  ok_in_progress     — GENERACION (manual upload: always healthy, no time limit)
   already_failed     — FAILED (someone already handled it, no action)
   no_active_cycle    — no active season/cycle exists (no action)
-  stuck_generation   — GENERACION, elapsed ≥ 60 min → forces FAILED
   stuck_voting       — VOTACION at 23:55               → forces FAILED
   stuck_filtering    — FILTERING at 23:55              → forces FAILED
   stuck_reception    — RECEPCION_IDEAS at 23:55        → forces FAILED
@@ -242,11 +241,21 @@ async def check(
 
 
 def _compute_verdict(state: str, elapsed_s: float) -> WatchdogVerdict:
-    """Map cycle state + elapsed seconds to a watchdog verdict (R-004 table)."""
+    """Map cycle state + elapsed seconds to a watchdog verdict (R-004 table).
+
+    GENERACION note (módulo 014 — manual video upload):
+        Since the pivot to manual video upload, GENERACION no longer runs an
+        automated pipeline that finishes in <60 min — it waits for the operator
+        to upload the video via the admin panel, which may take hours or days.
+        The watchdog therefore always treats GENERACION as healthy
+        (``ok_in_progress``) and never forces it to FAILED on a time fence.
+        ``GENERATION_GRACE_S`` is retained for backward compatibility but no
+        longer gates this state.
+    """
     if state == "PENDING_RELEASE":
         return "ready_for_release"
     if state == "GENERACION":
-        return "ok_in_progress" if elapsed_s < GENERATION_GRACE_S else "stuck_generation"
+        return "ok_in_progress"
     if state == "FAILED":
         return "already_failed"
     if state == "VOTACION":
